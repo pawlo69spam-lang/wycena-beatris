@@ -14,7 +14,6 @@
 <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
 <meta name="theme-color" content="#a16207">
 
-
 <script>
 window.addEventListener('error', function(e) {
   var root = document.getElementById('root');
@@ -134,11 +133,37 @@ async function dbDelete(key) {
 // ========================================================
 
 function ShowroomQuoteApp() {
+  // === LOGOWANIE I UŻYTKOWNICY ===
+  // Lista użytkowników. Domyślnie: BEATRIS jako admin.
+  const [users, setUsers] = useState([
+    { username: 'BEATRIS', password: 'BEATRIS', isAdmin: true }
+  ]);
+  // Aktualnie zalogowany użytkownik (null = niezalogowany)
+  const [currentUser, setCurrentUser] = useState(null);
+  // Pola formularza logowania
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  // Panel zarządzania użytkownikami
+  const [usersPanelOpen, setUsersPanelOpen] = useState(false);
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newIsAdmin, setNewIsAdmin] = useState(false);
+
   // 3 kategorie cenników: indywidualni, b2b PLN, b2b EUR
   const CATEGORIES = [
     { id: 'indywidualni', label: 'INDYWIDUALNI', currency: 'zł' },
     { id: 'b2b_pln', label: 'B2B PLN', currency: 'zł' },
     { id: 'b2b_eur', label: 'B2B EUR', currency: '€' },
+  ];
+
+  // Statusy oferty
+  const STATUSES = [
+    { id: 'UTWORZONA', label: 'UTWORZONA', bg: 'bg-stone-500', text: 'text-white' },
+    { id: 'WYSŁANA', label: 'WYSŁANA', bg: 'bg-blue-600', text: 'text-white' },
+    { id: 'PRODUKCJA', label: 'PRODUKCJA', bg: 'bg-yellow-800', text: 'text-white' },
+    { id: 'ZREALIZOWANA', label: 'ZREALIZOWANA', bg: 'bg-green-700', text: 'text-white' },
+    { id: 'ANULOWANA', label: 'ANULOWANA', bg: 'bg-red-700', text: 'text-white' },
   ];
   // Aktywna kategoria
   const [activeCategory, setActiveCategory] = useState('indywidualni');
@@ -177,11 +202,21 @@ function ShowroomQuoteApp() {
   const [discount, setDiscount] = useState(0);
   const [previewImage, setPreviewImage] = useState(null);
   const [isLoading, setIsLoading] = useState(true); // ładowanie z IndexedDB
+  const [lastSavedAt, setLastSavedAt] = useState(null); // znacznik ostatniego udanego zapisu
 
   // Ładowanie zapisanych danych przy starcie aplikacji
   useEffect(() => {
     (async () => {
       try {
+        const savedUsers = await dbGet('users');
+        if (savedUsers && Array.isArray(savedUsers) && savedUsers.length > 0) {
+          // Upewnij się że BEATRIS zawsze istnieje jako admin
+          const hasBeatris = savedUsers.some(u => u.username === 'BEATRIS');
+          if (!hasBeatris) {
+            savedUsers.push({ username: 'BEATRIS', password: 'BEATRIS', isAdmin: true });
+          }
+          setUsers(savedUsers);
+        }
         const savedCatalogs = await dbGet('catalogs');
         if (savedCatalogs) {
           setCatalogs(prev => ({ ...prev, ...savedCatalogs }));
@@ -202,14 +237,28 @@ function ShowroomQuoteApp() {
     })();
   }, []);
 
+  // Automatyczny zapis listy użytkowników
+  useEffect(() => {
+    if (isLoading) return;
+    (async () => {
+      try {
+        await dbSet('users', users);
+      } catch (err) {
+        console.error('Błąd zapisu użytkowników:', err);
+      }
+    })();
+  }, [users, isLoading]);
+
   // Automatyczny zapis cenników
   useEffect(() => {
     if (isLoading) return;
     (async () => {
       try {
         await dbSet('catalogs', catalogs);
+        setLastSavedAt(new Date());
       } catch (err) {
         console.error('Błąd zapisu cenników:', err);
+        alert('UWAGA: Nie udało się zapisać cennika do pamięci tabletu. Błąd: ' + err.message);
       }
     })();
   }, [catalogs, isLoading]);
@@ -259,16 +308,91 @@ function ShowroomQuoteApp() {
     };
   }, [savedQuotes, catalogs, images]);
 
+  // ---- LOGOWANIE I ZARZĄDZANIE UŻYTKOWNIKAMI ----
+  const handleLogin = () => {
+    const user = users.find(u =>
+      u.username.toLowerCase() === loginUsername.toLowerCase().trim() &&
+      u.password === loginPassword
+    );
+    if (!user) {
+      setLoginError('Niepoprawna nazwa użytkownika lub hasło');
+      return;
+    }
+    setCurrentUser(user);
+    setLoginUsername('');
+    setLoginPassword('');
+    setLoginError('');
+    // Wygeneruj numer wyceny dla zalogowanego użytkownika
+    setQuoteNumber(generateQuoteNumber());
+  };
+
+  const handleLogout = () => {
+    if (positions.length > 0 && !currentQuoteId) {
+      const ok = confirm('Masz niezapisaną wycenę. Czy na pewno chcesz się wylogować? Wycena zostanie utracona.');
+      if (!ok) return;
+    }
+    setCurrentUser(null);
+    setPositions([]);
+    setClientName(''); setClientPhone(''); setClientEmail('');
+    setOrderNotes(''); setOrderPhotos([]);
+    setCurrentQuoteId(null);
+    setCurrentStatus('UTWORZONA');
+    setQuoteNumber('—');
+  };
+
+  const addUser = () => {
+    const u = newUsername.trim();
+    if (!u || !newPassword) {
+      alert('Podaj nazwę użytkownika i hasło.');
+      return;
+    }
+    if (users.some(x => x.username.toLowerCase() === u.toLowerCase())) {
+      alert('Użytkownik o tej nazwie już istnieje.');
+      return;
+    }
+    setUsers([...users, { username: u, password: newPassword, isAdmin: newIsAdmin }]);
+    setNewUsername('');
+    setNewPassword('');
+    setNewIsAdmin(false);
+  };
+
+  const deleteUser = (username) => {
+    if (username === 'BEATRIS') {
+      alert('Nie można usunąć użytkownika BEATRIS (admin główny).');
+      return;
+    }
+    if (username === currentUser?.username) {
+      alert('Nie można usunąć samego siebie.');
+      return;
+    }
+    if (!confirm(`Usunąć użytkownika "${username}"?`)) return;
+    setUsers(users.filter(u => u.username !== username));
+  };
+
   // ---- HISTORIA WYCEN ----
+  // Generuje numer w formacie BEA/001/2026, BEA/002/2026 itd.
+  // Liczy się jako najwyższy numer z danego roku + 1.
   const generateQuoteNumber = () => {
-    const d = new Date();
-    return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
+    const year = new Date().getFullYear();
+    let maxNum = 0;
+    savedQuotes.forEach(q => {
+      // Format aktualny: BEA/NNN/YYYY
+      const m = (q.quoteNumber || '').match(/^BEA\/(\d+)\/(\d{4})$/);
+      if (m && parseInt(m[2]) === year) {
+        const n = parseInt(m[1]);
+        if (n > maxNum) maxNum = n;
+      }
+    });
+    const next = maxNum + 1;
+    return `BEA/${String(next).padStart(3, '0')}/${year}`;
   };
 
   const buildQuoteData = (id) => ({
     id: id,
     quoteNumber,
     savedAt: new Date().toISOString(),
+    createdBy: currentUser?.username || '?', // KTO przyjął zlecenie
+    status: currentStatus, // STATUS oferty
     category: activeCategory,
     categoryLabel: CATEGORIES.find(c => c.id === activeCategory)?.label,
     currency,
@@ -306,6 +430,23 @@ function ShowroomQuoteApp() {
   };
 
   // Rozpocznij NOWĄ wycenę (zaproponuj zapis aktualnej)
+  // Pomocnicza funkcja resetująca aktualną wycenę do stanu "nowa, niezapisana"
+  // Używana po przełączeniu kategorii, po starcie nowej wyceny, po wylogowaniu itp.
+  const resetCurrentQuote = (generateNewNumber = true) => {
+    setPositions([]);
+    setDiscount(0);
+    setClientName('');
+    setClientPhone('');
+    setClientEmail('');
+    setOrderNotes('');
+    setOrderPhotos([]);
+    setCurrentQuoteId(null);
+    setCurrentStatus('UTWORZONA');
+    if (generateNewNumber) {
+      setQuoteNumber(generateQuoteNumber());
+    }
+  };
+
   const startNewQuote = () => {
     if (positions.length > 0 && !currentQuoteId) {
       const confirmed = confirm(
@@ -325,16 +466,7 @@ function ShowroomQuoteApp() {
         saveCurrentQuote(true);
       }
     }
-    // Reset całej wyceny
-    setPositions([]);
-    setDiscount(0);
-    setClientName('');
-    setClientPhone('');
-    setClientEmail('');
-    setOrderNotes('');
-    setOrderPhotos([]);
-    setCurrentQuoteId(null);
-    setQuoteNumber(generateQuoteNumber());
+    resetCurrentQuote(true);
   };
 
   const loadQuoteFromHistory = (quote) => {
@@ -355,6 +487,7 @@ function ShowroomQuoteApp() {
       setTimeout(() => {
         setQuoteNumber(quote.quoteNumber);
         setCurrentQuoteId(quote.id);
+        setCurrentStatus(quote.status || 'UTWORZONA');
         setPositions(quote.positions);
         setDiscount(quote.discount || 0);
         setClientName(quote.clientName || '');
@@ -366,6 +499,7 @@ function ShowroomQuoteApp() {
     } else {
       setQuoteNumber(quote.quoteNumber);
       setCurrentQuoteId(quote.id);
+      setCurrentStatus(quote.status || 'UTWORZONA');
       setPositions(quote.positions);
       setDiscount(quote.discount || 0);
       setClientName(quote.clientName || '');
@@ -386,6 +520,88 @@ function ShowroomQuoteApp() {
     }
   };
 
+  // Zmiana statusu wyceny w historii (bez wczytywania całej)
+  const changeQuoteStatus = (id, newStatus) => {
+    setSavedQuotes(prev => prev.map(q => q.id === id ? { ...q, status: newStatus } : q));
+    // Jeśli edytujemy tę wycenę, zaktualizuj też aktualny status
+    if (currentQuoteId === id) {
+      setCurrentStatus(newStatus);
+    }
+  };
+
+  // Eksport historii wycen do Excela
+  const exportHistoryToExcel = () => {
+    if (savedQuotes.length === 0) {
+      alert('Brak wycen do eksportu.');
+      return;
+    }
+    // Arkusz 1: Lista wycen (jeden wiersz = jedna wycena)
+    const summaryRows = savedQuotes.map(q => {
+      const d = new Date(q.savedAt);
+      return {
+        'Numer': q.quoteNumber || '',
+        'Data zapisu': d.toLocaleString('pl-PL'),
+        'Status': q.status || 'UTWORZONA',
+        'Kategoria': q.categoryLabel || '',
+        'Klient': q.clientName || '',
+        'Telefon': q.clientPhone || '',
+        'E-mail': q.clientEmail || '',
+        'Przyjął': q.createdBy || '',
+        'Liczba pozycji': q.positions?.length || 0,
+        'Suma częściowa': q.subtotal || 0,
+        'Rabat %': q.discount || 0,
+        'Do zapłaty': q.total || 0,
+        'Waluta': q.currency || '',
+        'Uwagi': q.orderNotes || '',
+      };
+    });
+
+    // Arkusz 2: Wszystkie pozycje (jeden wiersz = jedna pozycja)
+    const positionsRows = [];
+    savedQuotes.forEach(q => {
+      (q.positions || []).forEach((p, idx) => {
+        positionsRows.push({
+          'Nr wyceny': q.quoteNumber || '',
+          'Klient': q.clientName || '',
+          'Status': q.status || 'UTWORZONA',
+          'Kategoria': q.categoryLabel || '',
+          'Lp.': idx + 1,
+          'Kolekcja': p.collection || '',
+          'Element': p.elementName || '',
+          'Grupa cenowa': p.group || '',
+          'Cena jedn.': p.price || 0,
+          'Ilość': p.qty || 0,
+          'Wartość': (p.price || 0) * (p.qty || 0),
+          'Waluta': q.currency || '',
+        });
+      });
+    });
+
+    const wb = window.XLSX.utils.book_new();
+    const ws1 = window.XLSX.utils.json_to_sheet(summaryRows);
+    const ws2 = window.XLSX.utils.json_to_sheet(positionsRows);
+
+    // Auto-szerokość kolumn
+    const autoWidth = (rows) => {
+      if (rows.length === 0) return [];
+      return Object.keys(rows[0]).map(key => {
+        const maxLen = Math.max(
+          key.length,
+          ...rows.map(r => String(r[key] || '').length)
+        );
+        return { wch: Math.min(maxLen + 2, 40) };
+      });
+    };
+    ws1['!cols'] = autoWidth(summaryRows);
+    ws2['!cols'] = autoWidth(positionsRows);
+
+    window.XLSX.utils.book_append_sheet(wb, ws1, 'Wyceny');
+    window.XLSX.utils.book_append_sheet(wb, ws2, 'Pozycje');
+
+    const today = new Date().toISOString().slice(0, 10);
+    window.XLSX.writeFile(wb, `Wyceny_Beatris_${today}.xlsx`);
+  };
+
   // ZMIANA KATEGORII - pytaj o zapisanie wyceny
   const handleCategoryChange = (newCategoryId) => {
     if (newCategoryId === activeCategory) return;
@@ -398,18 +614,31 @@ function ShowroomQuoteApp() {
         saveCurrentQuote(true);
       }
     }
-    // Reset aktualnej wyceny przy zmianie kategorii
-    setCurrentQuoteId(null);
-    setQuoteNumber(generateQuoteNumber());
+    // Pełny reset wyceny przy zmianie kategorii (status, klient, uwagi, zdjęcia, etc.)
+    resetCurrentQuote(true);
     setActiveCategory(newCategoryId);
   };
 
-  // Po zmianie aktywnej kategorii — wyczyść wycenę (różne cenniki, różne ceny)
-  // i ustaw pierwszą kolekcję jako wybraną
+  // Po zmianie aktywnej kategorii — wyczyść tylko pozycje (bez resetowania selectedCollectionName)
   useEffect(() => {
+    if (isLoading) return;
     setPositions([]);
-    setSelectedCollectionName(collections[0]?.name || '');
-  }, [activeCategory]);
+  }, [activeCategory, isLoading]);
+
+  // Synchronizuj selectedCollectionName z aktywną kategorią - zawsze trzymaj pierwszą kolekcję jako wybraną,
+  // dopóki użytkownik nie zmieni ręcznie
+  useEffect(() => {
+    if (isLoading) return;
+    if (collections.length === 0) {
+      setSelectedCollectionName('');
+      return;
+    }
+    // Jeśli aktualnie wybrana kolekcja nie istnieje w aktywnej kategorii, ustaw pierwszą
+    const exists = collections.some(c => c.name === selectedCollectionName);
+    if (!exists) {
+      setSelectedCollectionName(collections[0].name);
+    }
+  }, [collections, activeCategory, isLoading]);
 
   // Modal dodawania pozycji
   const [modalOpen, setModalOpen] = useState(false);
@@ -429,18 +658,20 @@ function ShowroomQuoteApp() {
   const [orderNotes, setOrderNotes] = useState('');
   const [orderPhotos, setOrderPhotos] = useState([]); // [{ id, dataUrl, label }]
   const orderPhotoInputRef = useRef(null);
-  const orderPhotoCameraRef = useRef(null);
 
   // Historia wycen
   const [savedQuotes, setSavedQuotes] = useState([]);
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
   // ID aktualnie edytowanej wyceny w historii (null = nowa, nie zapisana jeszcze)
   const [currentQuoteId, setCurrentQuoteId] = useState(null);
-  // Numer aktualnej wyceny - generuje się raz, przy nowej wycenie
-  const [quoteNumber, setQuoteNumber] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
-  });
+  // Status aktualnej wyceny
+  const [currentStatus, setCurrentStatus] = useState('UTWORZONA');
+  // Filtr historii według statusu
+  const [historyStatusFilter, setHistoryStatusFilter] = useState('WSZYSTKIE');
+  // Wyszukiwarka w historii (klient, numer, data, autor)
+  const [historySearch, setHistorySearch] = useState('');
+  // Numer aktualnej wyceny - generuje się po zalogowaniu, na podstawie historii
+  const [quoteNumber, setQuoteNumber] = useState('—');
 
   const excelInputRef = useRef(null);
   const imagesInputRef = useRef(null);
@@ -455,7 +686,6 @@ function ShowroomQuoteApp() {
   const handleExcelUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    setFileName(file.name);
 
     const reader = new FileReader();
     reader.onload = (evt) => {
@@ -468,7 +698,6 @@ function ShowroomQuoteApp() {
 
       const headers = rows[0];
       const groups = headers.slice(2).map(h => String(h).trim()).filter(h => h !== '');
-      setPriceGroups(groups);
 
       const collectionsMap = {};
       for (let i = 1; i < rows.length; i++) {
@@ -489,7 +718,16 @@ function ShowroomQuoteApp() {
         collectionsMap[collectionName].elements.push({ name: elementName, prices });
       }
       const parsed = Object.values(collectionsMap);
-      setCollections(parsed);
+
+      // ATOMOWY ZAPIS: jedno setCatalogs ze wszystkimi zmianami naraz
+      setCatalogs(prev => ({
+        ...prev,
+        [activeCategory]: {
+          collections: parsed,
+          priceGroups: groups,
+          fileName: file.name,
+        }
+      }));
       setSelectedCollectionName(parsed[0]?.name || '');
       setPositions([]);
     };
@@ -718,7 +956,7 @@ function ShowroomQuoteApp() {
   <div class="header">
     <div class="label">SHOWROOM · WYCENA</div>
     <h1>Wycena mebli modułowych</h1>
-    <div class="num">Nr ${quoteNumber} · ${dateStr}</div>
+    <div class="num">Nr ${quoteNumber} · ${dateStr}${currentUser ? ` · Przyjął: ${currentUser.username}` : ''} · Status: ${currentStatus}</div>
   </div>
 
   <div class="meta-row">
@@ -853,7 +1091,10 @@ function ShowroomQuoteApp() {
 
     const dateStr = new Date().toLocaleDateString('pl-PL');
     let body = `Wycena nr ${quoteNumber}\n`;
-    body += `Data: ${dateStr}\n\n`;
+    body += `Data: ${dateStr}\n`;
+    if (currentUser) body += `Przyjął: ${currentUser.username}\n`;
+    body += `Status: ${currentStatus}\n`;
+    body += `\n`;
     if (clientName) body += `Klient: ${clientName}\n`;
     if (clientPhone) body += `Telefon: ${clientPhone}\n`;
     if (clientEmail) body += `E-mail: ${clientEmail}\n`;
@@ -894,6 +1135,73 @@ function ShowroomQuoteApp() {
         <div className="text-center">
           <div className="inline-block w-12 h-12 border-4 border-stone-300 border-t-yellow-800 rounded-full animate-spin mb-4"></div>
           <div className="text-stone-700 tracking-wider uppercase text-sm">Wczytywanie aplikacji...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // === EKRAN LOGOWANIA ===
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-orange-50 flex items-center justify-center p-6" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}>
+        <div className="max-w-md w-full bg-white shadow-2xl border border-stone-300">
+          <div className="bg-orange-100 text-stone-800 px-10 py-8 border-b-4 border-yellow-800 text-center">
+            <div className="text-xs tracking-[0.4em] text-yellow-700 mb-2">SHOWROOM · WYCENY</div>
+            <h1 className="text-4xl font-light tracking-tight">Logowanie</h1>
+            <div className="text-stone-500 mt-2 italic text-sm">Konfigurator mebli modułowych</div>
+          </div>
+
+          <div className="p-8 space-y-4">
+            <div>
+              <label className="block text-[10px] tracking-wider uppercase text-stone-500 mb-1">Użytkownik</label>
+              <div className="relative">
+                <select
+                  value={loginUsername}
+                  onChange={e => { setLoginUsername(e.target.value); setLoginError(''); }}
+                  className="w-full bg-stone-50 border-2 border-stone-300 px-4 py-3 text-base appearance-none focus:outline-none focus:border-yellow-800 cursor-pointer pr-10"
+                  style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+                >
+                  <option value="">— wybierz użytkownika —</option>
+                  {users.map(u => (
+                    <option key={u.username} value={u.username}>
+                      {u.username}{u.isAdmin ? ' ★' : ''}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 pointer-events-none" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] tracking-wider uppercase text-stone-500 mb-1">Hasło</label>
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={e => { setLoginPassword(e.target.value); setLoginError(''); }}
+                onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                placeholder="Wpisz hasło"
+                className="w-full bg-stone-50 border-2 border-stone-300 px-4 py-3 text-base focus:outline-none focus:border-yellow-800"
+                autoFocus
+              />
+            </div>
+
+            {loginError && (
+              <div className="bg-red-50 border border-red-300 text-red-700 px-4 py-2 text-sm">
+                {loginError}
+              </div>
+            )}
+
+            <button
+              onClick={handleLogin}
+              className="w-full bg-yellow-800 hover:bg-yellow-900 text-white px-6 py-4 text-base tracking-wider uppercase transition-colors"
+            >
+              Zaloguj się
+            </button>
+
+            <div className="text-center text-[10px] text-stone-400 tracking-wider uppercase pt-4 border-t border-stone-200">
+              Zarejestrowanych użytkowników: {users.length}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -981,6 +1289,11 @@ function ShowroomQuoteApp() {
             <div className="text-[10px] text-stone-500 hidden md:block">
               <FileSpreadsheet size={12} className="inline mr-1" />
               {fileName}
+              {lastSavedAt && (
+                <span className="ml-2 text-green-700" title={`Zapisano: ${lastSavedAt.toLocaleTimeString('pl-PL')}`}>
+                  💾 zapisano
+                </span>
+              )}
             </div>
             <button
               onClick={() => setImageDebugOpen(true)}
@@ -1013,14 +1326,42 @@ function ShowroomQuoteApp() {
               onChange={handleImagesUpload}
               className="hidden"
             />
-            <div className="text-[10px] text-stone-600 mr-1 flex items-center gap-1 border-r border-stone-300 pr-2">
-              <span className="opacity-60">WYCENA</span>
-              <span className="font-bold">{quoteNumber}</span>
-              {currentQuoteId ? (
-                <span className="text-yellow-700" title="Zapisana w historii">●</span>
-              ) : positions.length > 0 ? (
-                <span className="text-red-600" title="Niezapisana">●</span>
-              ) : null}
+            <div className="text-[10px] text-stone-600 mr-1 flex items-center gap-2 border-r border-stone-300 pr-2">
+              <div className="flex items-center gap-1">
+                <span className="opacity-60">WYCENA</span>
+                <span className="font-bold">{quoteNumber}</span>
+                {currentQuoteId ? (
+                  <span className="text-yellow-700" title="Zapisana w historii">●</span>
+                ) : positions.length > 0 ? (
+                  <span className="text-red-600" title="Niezapisana">●</span>
+                ) : null}
+              </div>
+              {/* DROPDOWN STATUSU */}
+              {(() => {
+                const st = STATUSES.find(s => s.id === currentStatus) || STATUSES[0];
+                return (
+                  <div className="relative">
+                    <select
+                      value={currentStatus}
+                      onChange={e => {
+                        const newSt = e.target.value;
+                        setCurrentStatus(newSt);
+                        // Jeśli wycena jest już w historii, zaktualizuj jej status
+                        if (currentQuoteId) {
+                          setSavedQuotes(prev => prev.map(q => q.id === currentQuoteId ? { ...q, status: newSt } : q));
+                        }
+                      }}
+                      className={`${st.bg} ${st.text} px-2 py-1 text-[10px] tracking-wider uppercase font-bold appearance-none cursor-pointer pr-5 border-0 focus:outline-none`}
+                      title="Status oferty"
+                    >
+                      {STATUSES.map(s => (
+                        <option key={s.id} value={s.id} className="bg-white text-stone-800">{s.label}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={10} className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none text-white opacity-80" />
+                  </div>
+                );
+              })()}
             </div>
             <button
               onClick={() => setHistoryPanelOpen(true)}
@@ -1063,6 +1404,36 @@ function ShowroomQuoteApp() {
             >
               Wymień cennik
             </button>
+
+            {/* INFO O ZALOGOWANYM UŻYTKOWNIKU */}
+            <div className="flex items-center gap-2 border-l-2 border-yellow-800 pl-3 ml-2">
+              <div className="bg-yellow-800 text-white px-3 py-2 text-xs tracking-wider uppercase flex items-center gap-2 shadow">
+                <User size={14} />
+                <div className="flex flex-col leading-tight">
+                  <span className="text-[8px] opacity-80">Zalogowany</span>
+                  <span className="font-bold text-sm">
+                    {currentUser.username}
+                    {currentUser.isAdmin && <span className="text-yellow-200 ml-1">★</span>}
+                  </span>
+                </div>
+              </div>
+              {currentUser.isAdmin && (
+                <button
+                  onClick={() => setUsersPanelOpen(true)}
+                  className="bg-orange-50 hover:bg-orange-100 text-stone-800 border border-stone-300 px-2 py-2 text-[10px] tracking-wider uppercase"
+                  title="Zarządzanie użytkownikami"
+                >
+                  👥
+                </button>
+              )}
+              <button
+                onClick={handleLogout}
+                className="bg-orange-50 hover:bg-red-600 hover:text-white text-stone-700 border border-stone-300 hover:border-red-600 px-2 py-2 text-[10px] tracking-wider uppercase"
+                title="Wyloguj się"
+              >
+                Wyloguj
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1170,7 +1541,7 @@ function ShowroomQuoteApp() {
               const availableGroups = priceGroups.filter(g => (el?.prices[g] || 0) > 0);
 
               return (
-                <div key={pos.id} className="bg-white border border-stone-200 hover:shadow-md transition-shadow flex items-center gap-4 px-4 py-3">
+                <div key={pos.id} className="bg-white border border-stone-200 shadow-sm hover:shadow-md transition-shadow flex items-center gap-4 px-4 py-3">
                   {/* Numer */}
                   <div className="w-12 h-12 bg-yellow-800 text-white flex items-center justify-center font-bold text-xl flex-shrink-0">
                     {idx + 1}
@@ -1178,7 +1549,7 @@ function ShowroomQuoteApp() {
 
                   {/* Zdjęcie */}
                   <div
-                    className="w-24 h-24 bg-stone-50 border border-stone-200 flex items-center justify-center flex-shrink-0 cursor-pointer"
+                    className="w-24 h-24 bg-orange-50 border border-stone-200 flex items-center justify-center flex-shrink-0 cursor-pointer"
                     onClick={() => img && setPreviewImage(img)}
                   >
                     {img ? (
@@ -1280,33 +1651,20 @@ function ShowroomQuoteApp() {
                   </div>
                 </div>
 
-                <div className="flex gap-2 mb-3">
-                  <button
-                    onClick={() => orderPhotoCameraRef.current?.click()}
-                    className="flex-1 bg-yellow-800 hover:bg-yellow-900 text-white px-3 py-2 text-xs tracking-wider uppercase flex items-center justify-center gap-2"
-                  >
-                    📷 Zrób zdjęcie
-                  </button>
+                <div className="mb-3">
                   <button
                     onClick={() => orderPhotoInputRef.current?.click()}
-                    className="flex-1 bg-orange-50 hover:bg-orange-100 border border-stone-400 text-stone-800 px-3 py-2 text-xs tracking-wider uppercase flex items-center justify-center gap-2"
+                    className="w-full bg-yellow-800 hover:bg-yellow-900 text-white px-3 py-3 text-sm tracking-wider uppercase flex items-center justify-center gap-2"
                   >
-                    🖼 Z galerii
+                    📷 Wgraj zdjęcie
                   </button>
                 </div>
 
                 <input
-                  ref={orderPhotoCameraRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={handleOrderPhotoUpload}
-                  className="hidden"
-                />
-                <input
                   ref={orderPhotoInputRef}
                   type="file"
                   accept="image/*"
+                  capture="environment"
                   multiple
                   onChange={handleOrderPhotoUpload}
                   className="hidden"
@@ -1518,6 +1876,110 @@ function ShowroomQuoteApp() {
         </div>
       )}
 
+      {/* PANEL UŻYTKOWNIKÓW (TYLKO DLA ADMINA) */}
+      {usersPanelOpen && currentUser?.isAdmin && (
+        <div
+          className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+          onClick={() => setUsersPanelOpen(false)}
+        >
+          <div
+            className="bg-white max-w-xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="bg-orange-100 text-stone-800 px-6 py-5 flex items-center justify-between border-b-4 border-yellow-800">
+              <div>
+                <div className="text-[10px] tracking-[0.4em] text-yellow-700">👥 UŻYTKOWNICY</div>
+                <div className="text-xl font-light">Zarządzanie kontami</div>
+              </div>
+              <button onClick={() => setUsersPanelOpen(false)} className="text-stone-600 hover:text-yellow-800">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* LISTA UŻYTKOWNIKÓW */}
+              <div>
+                <div className="text-[10px] tracking-wider uppercase text-stone-500 mb-2">
+                  Zarejestrowani użytkownicy ({users.length})
+                </div>
+                <div className="space-y-2">
+                  {users.map(u => (
+                    <div key={u.username} className="bg-orange-50 border border-stone-200 p-3 flex items-center gap-3">
+                      <div className="bg-yellow-800 text-white px-2 py-1 text-[10px] tracking-wider uppercase flex items-center gap-1">
+                        <User size={11} />
+                        {u.username}
+                        {u.isAdmin && <span className="text-yellow-200">★</span>}
+                      </div>
+                      <div className="text-[10px] text-stone-500 italic flex-1">
+                        {u.isAdmin ? 'Administrator' : 'Użytkownik'}
+                        {u.username === currentUser.username && ' (Ty)'}
+                      </div>
+                      <button
+                        onClick={() => deleteUser(u.username)}
+                        disabled={u.username === 'BEATRIS' || u.username === currentUser.username}
+                        className="bg-stone-100 hover:bg-red-600 hover:text-white text-stone-500 p-2 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        title={u.username === 'BEATRIS' ? 'Nie można usunąć głównego admina' : 'Usuń użytkownika'}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* DODAWANIE NOWEGO */}
+              <div className="border-t border-stone-200 pt-4">
+                <div className="text-[10px] tracking-wider uppercase text-stone-500 mb-2">
+                  Dodaj nowego użytkownika
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-[10px] tracking-wider uppercase text-stone-500 mb-1">Nazwa użytkownika</label>
+                    <input
+                      type="text"
+                      value={newUsername}
+                      onChange={e => setNewUsername(e.target.value)}
+                      placeholder="np. ANNA"
+                      className="w-full bg-stone-50 border-2 border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-yellow-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] tracking-wider uppercase text-stone-500 mb-1">Hasło</label>
+                    <input
+                      type="text"
+                      value={newPassword}
+                      onChange={e => setNewPassword(e.target.value)}
+                      placeholder="Wpisz hasło"
+                      className="w-full bg-stone-50 border-2 border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-yellow-800"
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer text-sm text-stone-700">
+                    <input
+                      type="checkbox"
+                      checked={newIsAdmin}
+                      onChange={e => setNewIsAdmin(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                    Administrator (może zarządzać użytkownikami)
+                  </label>
+                  <button
+                    onClick={addUser}
+                    className="w-full bg-yellow-800 hover:bg-yellow-900 text-white px-4 py-3 text-sm tracking-wider uppercase"
+                  >
+                    + Dodaj użytkownika
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-orange-50 border-l-4 border-yellow-800 p-3 text-xs text-stone-700">
+                <strong>Wskazówka:</strong> Każda zapisana wycena ma przypisanego użytkownika, który ją przyjął.
+                Widać to w historii wycen oraz w generowanym PDF i mailu.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* HISTORIA WYCEN */}
       {historyPanelOpen && (
         <div
@@ -1541,15 +2003,165 @@ function ShowroomQuoteApp() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4">
-              {savedQuotes.length === 0 ? (
-                <div className="text-center py-16 text-stone-500 italic">
-                  Brak zapisanych wycen.<br/>
-                  Kliknij "💾 Zapisz wycenę" w nagłówku, aby zapisać aktualną wycenę.
+            {/* WYSZUKIWARKA + FILTR PO STATUSIE */}
+            {savedQuotes.length > 0 && (
+              <>
+                {/* Wyszukiwarka */}
+                <div className="bg-stone-50 border-b border-stone-200 px-4 py-2 flex items-center gap-2">
+                  <span className="text-stone-400">🔍</span>
+                  <input
+                    type="text"
+                    value={historySearch}
+                    onChange={e => setHistorySearch(e.target.value)}
+                    placeholder="Szukaj po kliencie, numerze, dacie, autorze..."
+                    className="flex-1 bg-white border border-stone-300 px-3 py-1.5 text-sm focus:outline-none focus:border-yellow-800"
+                  />
+                  {historySearch && (
+                    <button
+                      onClick={() => setHistorySearch('')}
+                      className="text-stone-500 hover:text-red-600 px-2"
+                      title="Wyczyść wyszukiwanie"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
-              ) : (
+
+                {/* MINI-STATYSTYKI (tylko dla admina) */}
+                {currentUser?.isAdmin && (() => {
+                  const now = new Date();
+                  const thisMonth = now.getMonth();
+                  const thisYear = now.getFullYear();
+                  const monthQuotes = savedQuotes.filter(q => {
+                    const d = new Date(q.savedAt);
+                    return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
+                  });
+                  const yearQuotes = savedQuotes.filter(q => {
+                    const d = new Date(q.savedAt);
+                    return d.getFullYear() === thisYear;
+                  });
+                  // Suma per waluta (bo mamy PLN i EUR)
+                  const sumByCurrency = (quotes) => {
+                    const sums = {};
+                    quotes.forEach(q => {
+                      const c = q.currency || '€';
+                      sums[c] = (sums[c] || 0) + (q.total || 0);
+                    });
+                    return sums;
+                  };
+                  const monthSums = sumByCurrency(monthQuotes);
+                  const yearSums = sumByCurrency(yearQuotes);
+                  const fmtNum = (n) => n.toFixed(2).replace('.', ',');
+                  const monthName = now.toLocaleString('pl-PL', { month: 'long' });
+
+                  return (
+                    <div className="bg-orange-100 border-b border-stone-200 px-4 py-2 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                      <div>
+                        <div className="text-stone-500 tracking-wider uppercase text-[9px]">Ten miesiąc ({monthName})</div>
+                        <div className="text-stone-800 font-bold">{monthQuotes.length} ofert</div>
+                        <div className="text-yellow-800 font-medium">
+                          {Object.entries(monthSums).map(([c, s]) => `${fmtNum(s)} ${c}`).join(' · ') || '—'}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-stone-500 tracking-wider uppercase text-[9px]">Ten rok ({thisYear})</div>
+                        <div className="text-stone-800 font-bold">{yearQuotes.length} ofert</div>
+                        <div className="text-yellow-800 font-medium">
+                          {Object.entries(yearSums).map(([c, s]) => `${fmtNum(s)} ${c}`).join(' · ') || '—'}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-stone-500 tracking-wider uppercase text-[9px]">W produkcji</div>
+                        <div className="text-stone-800 font-bold">
+                          {savedQuotes.filter(q => (q.status || 'UTWORZONA') === 'PRODUKCJA').length}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-stone-500 tracking-wider uppercase text-[9px]">Zrealizowane (rok)</div>
+                        <div className="text-stone-800 font-bold">
+                          {yearQuotes.filter(q => q.status === 'ZREALIZOWANA').length}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* FILTR PO STATUSIE */}
+                <div className="bg-stone-50 border-b border-stone-200 px-4 py-2 flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] tracking-wider uppercase text-stone-500">Filtr:</span>
+                <button
+                  onClick={() => setHistoryStatusFilter('WSZYSTKIE')}
+                  className={`px-3 py-1 text-[10px] tracking-wider uppercase font-bold ${
+                    historyStatusFilter === 'WSZYSTKIE' ? 'bg-stone-800 text-white' : 'bg-stone-200 text-stone-600 hover:bg-stone-300'
+                  }`}
+                >
+                  Wszystkie ({savedQuotes.length})
+                </button>
+                {STATUSES.map(s => {
+                  const count = savedQuotes.filter(q => (q.status || 'UTWORZONA') === s.id).length;
+                  if (count === 0) return null;
+                  const active = historyStatusFilter === s.id;
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => setHistoryStatusFilter(s.id)}
+                      className={`px-3 py-1 text-[10px] tracking-wider uppercase font-bold ${
+                        active ? `${s.bg} ${s.text}` : 'bg-stone-200 text-stone-600 hover:bg-stone-300'
+                      }`}
+                    >
+                      {s.label} ({count})
+                    </button>
+                  );
+                })}
+                </div>
+              </>
+            )}
+
+            <div className="flex-1 overflow-y-auto p-4">
+              {(() => {
+                let visible = historyStatusFilter === 'WSZYSTKIE'
+                  ? savedQuotes
+                  : savedQuotes.filter(q => (q.status || 'UTWORZONA') === historyStatusFilter);
+
+                // Wyszukiwanie po kliencie, numerze, dacie, autorze
+                if (historySearch.trim()) {
+                  const q = historySearch.toLowerCase().trim();
+                  visible = visible.filter(item => {
+                    const date = new Date(item.savedAt);
+                    const dateStr = date.toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                    const haystack = [
+                      item.clientName,
+                      item.clientPhone,
+                      item.clientEmail,
+                      item.quoteNumber,
+                      item.createdBy,
+                      item.categoryLabel,
+                      item.status,
+                      item.orderNotes,
+                      dateStr,
+                    ].filter(Boolean).join(' ').toLowerCase();
+                    return haystack.includes(q);
+                  });
+                }
+
+                if (savedQuotes.length === 0) {
+                  return (
+                    <div className="text-center py-16 text-stone-500 italic">
+                      Brak zapisanych wycen.<br/>
+                      Kliknij "💾 Zapisz wycenę" w nagłówku, aby zapisać aktualną wycenę.
+                    </div>
+                  );
+                }
+                if (visible.length === 0) {
+                  return (
+                    <div className="text-center py-16 text-stone-500 italic">
+                      Brak wycen pasujących do {historySearch ? `wyszukania "${historySearch}"` : `statusu "${historyStatusFilter}"`}.
+                    </div>
+                  );
+                }
+                return (
                 <div className="space-y-2">
-                  {savedQuotes.map(q => {
+                  {visible.map(q => {
                     const date = new Date(q.savedAt);
                     const dateStr = date.toLocaleString('pl-PL', {
                       day: '2-digit', month: '2-digit', year: 'numeric',
@@ -1560,10 +2172,30 @@ function ShowroomQuoteApp() {
                     return (
                       <div key={q.id} className="bg-orange-50 border border-stone-200 p-4 flex items-center gap-4 flex-wrap">
                         <div className="flex-1 min-w-[200px]">
-                          <div className="flex items-center gap-3 flex-wrap">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <div className="bg-yellow-800 text-white px-2 py-0.5 text-[10px] tracking-wider uppercase">
                               {q.categoryLabel}
                             </div>
+                            {/* PLAKIETKA STATUSU + DROPDOWN ZMIANY */}
+                            {(() => {
+                              const status = q.status || 'UTWORZONA';
+                              const st = STATUSES.find(s => s.id === status) || STATUSES[0];
+                              return (
+                                <div className="relative">
+                                  <select
+                                    value={status}
+                                    onChange={e => changeQuoteStatus(q.id, e.target.value)}
+                                    className={`${st.bg} ${st.text} px-2 py-0.5 text-[10px] tracking-wider uppercase font-bold appearance-none cursor-pointer pr-5 border-0 focus:outline-none`}
+                                    title="Zmień status"
+                                  >
+                                    {STATUSES.map(s => (
+                                      <option key={s.id} value={s.id} className="bg-white text-stone-800">{s.label}</option>
+                                    ))}
+                                  </select>
+                                  <ChevronDown size={10} className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none text-white opacity-80" />
+                                </div>
+                              );
+                            })()}
                             <div className="font-medium text-stone-800">
                               {q.clientName || '(bez klienta)'}
                             </div>
@@ -1571,6 +2203,11 @@ function ShowroomQuoteApp() {
                           <div className="text-[11px] text-stone-500 mt-1">
                             Nr {q.quoteNumber} · {dateStr}
                           </div>
+                          {q.createdBy && (
+                            <div className="text-[11px] text-yellow-700 font-medium">
+                              👤 Przyjął: {q.createdBy}
+                            </div>
+                          )}
                           {q.clientPhone && (
                             <div className="text-[11px] text-stone-500">📞 {q.clientPhone}</div>
                           )}
@@ -1609,11 +2246,19 @@ function ShowroomQuoteApp() {
                     );
                   })}
                 </div>
-              )}
+                );
+              })()}
             </div>
 
             {savedQuotes.length > 0 && (
-              <div className="border-t border-stone-200 p-3 bg-stone-50 flex justify-end">
+              <div className="border-t border-stone-200 p-3 bg-stone-50 flex justify-between items-center gap-2 flex-wrap">
+                <button
+                  onClick={exportHistoryToExcel}
+                  className="bg-green-700 hover:bg-green-800 text-white px-4 py-2 text-[10px] tracking-wider uppercase flex items-center gap-1"
+                  title="Pobierz historię wycen jako plik Excel"
+                >
+                  📊 Eksport do Excela ({savedQuotes.length})
+                </button>
                 <button
                   onClick={() => {
                     if (confirm('Czy na pewno chcesz usunąć WSZYSTKIE zapisane wyceny? Tej akcji nie można cofnąć.')) {
