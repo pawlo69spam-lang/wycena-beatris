@@ -1,0 +1,1941 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Wycena">
+<title>Wycena Showroom - Konfigurator mebli modułowych</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+<meta name="theme-color" content="#a16207">
+
+
+<script>
+window.addEventListener('error', function(e) {
+  var root = document.getElementById('root');
+  if (root) {
+    root.innerHTML = '<div style="padding:30px;font-family:Georgia,serif;color:#3d342a;background:#faf6ef;height:100vh;overflow:auto;">' +
+      '<h2 style="color:#a16207;">⚠ Wystąpił błąd</h2>' +
+      '<p><strong>Wiadomość:</strong> ' + (e.message || 'nieznany') + '</p>' +
+      '<p><strong>Plik:</strong> ' + (e.filename || '-') + '</p>' +
+      '<p><strong>Linia:</strong> ' + (e.lineno || '-') + '</p>' +
+      '<p style="margin-top:20px;color:#857461;">Najczęściej to oznacza, że któraś z bibliotek nie załadowała się z internetu. Sprawdź połączenie i odśwież stronę.</p>' +
+      '</div>';
+  }
+});
+</script>
+
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+  body { margin: 0; padding: 0; overflow: hidden; }
+  #root { height: 100vh; overflow: hidden; }
+  html, body { overscroll-behavior: none; -webkit-overflow-scrolling: touch; }
+  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&display=swap');
+</style>
+</head>
+<body>
+<div id="root">
+  <div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:Georgia,serif;color:#5c5043;">
+    <div style="text-align:center;">
+      <div style="width:48px;height:48px;border:4px solid #d4c5b3;border-top-color:#a16207;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 16px;"></div>
+      <div style="letter-spacing:0.2em;text-transform:uppercase;font-size:14px;">Ładowanie aplikacji...</div>
+    </div>
+  </div>
+</div>
+<style>
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+<script type="text/babel">
+const { useState, useMemo, useRef, useEffect } = React;
+
+
+const Icon = ({ children, size = 16, className = '' }) => (
+  React.createElement('svg', {
+    width: size, height: size, viewBox: '0 0 24 24',
+    fill: 'none', stroke: 'currentColor', strokeWidth: 2,
+    strokeLinecap: 'round', strokeLinejoin: 'round',
+    className
+  }, children)
+);
+const FolderOpen = (props) => Icon({ ...props, children: React.createElement('path', { d: 'M6 14l1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2' }) });
+const Plus = (props) => Icon({ ...props, children: [React.createElement('line', { key: 1, x1: 12, y1: 5, x2: 12, y2: 19 }), React.createElement('line', { key: 2, x1: 5, y1: 12, x2: 19, y2: 12 })] });
+const Trash2 = (props) => Icon({ ...props, children: [React.createElement('polyline', { key: 1, points: '3 6 5 6 21 6' }), React.createElement('path', { key: 2, d: 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2' })] });
+const Percent = (props) => Icon({ ...props, children: [React.createElement('line', { key: 1, x1: 19, y1: 5, x2: 5, y2: 19 }), React.createElement('circle', { key: 2, cx: 6.5, cy: 6.5, r: 2.5 }), React.createElement('circle', { key: 3, cx: 17.5, cy: 17.5, r: 2.5 })] });
+const FileSpreadsheet = (props) => Icon({ ...props, children: [React.createElement('path', { key: 1, d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' }), React.createElement('polyline', { key: 2, points: '14 2 14 8 20 8' }), React.createElement('line', { key: 3, x1: 8, y1: 13, x2: 16, y2: 13 }), React.createElement('line', { key: 4, x1: 8, y1: 17, x2: 16, y2: 17 })] });
+const ImageIcon = (props) => Icon({ ...props, children: [React.createElement('rect', { key: 1, x: 3, y: 3, width: 18, height: 18, rx: 2 }), React.createElement('circle', { key: 2, cx: 8.5, cy: 8.5, r: 1.5 }), React.createElement('polyline', { key: 3, points: '21 15 16 10 5 21' })] });
+const X = (props) => Icon({ ...props, children: [React.createElement('line', { key: 1, x1: 18, y1: 6, x2: 6, y2: 18 }), React.createElement('line', { key: 2, x1: 6, y1: 6, x2: 18, y2: 18 })] });
+const ChevronDown = (props) => Icon({ ...props, children: React.createElement('polyline', { points: '6 9 12 15 18 9' }) });
+const Check = (props) => Icon({ ...props, children: React.createElement('polyline', { points: '20 6 9 17 4 12' }) });
+const Download = (props) => Icon({ ...props, children: [React.createElement('path', { key: 1, d: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' }), React.createElement('polyline', { key: 2, points: '7 10 12 15 17 10' }), React.createElement('line', { key: 3, x1: 12, y1: 15, x2: 12, y2: 3 })] });
+const Mail = (props) => Icon({ ...props, children: [React.createElement('path', { key: 1, d: 'M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z' }), React.createElement('polyline', { key: 2, points: '22,6 12,13 2,6' })] });
+const User = (props) => Icon({ ...props, children: [React.createElement('path', { key: 1, d: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2' }), React.createElement('circle', { key: 2, cx: 12, cy: 7, r: 4 })] });
+
+
+// ============= IndexedDB - pamięć aplikacji =============
+const DB_NAME = 'showroom_quote_app';
+const DB_VERSION = 1;
+const STORE = 'data';
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE)) {
+        db.createObjectStore(STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function dbSet(key, value) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function dbGet(key) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function dbDelete(key) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+// ========================================================
+
+function ShowroomQuoteApp() {
+  // 3 kategorie cenników: indywidualni, b2b PLN, b2b EUR
+  const CATEGORIES = [
+    { id: 'indywidualni', label: 'INDYWIDUALNI', currency: 'zł' },
+    { id: 'b2b_pln', label: 'B2B PLN', currency: 'zł' },
+    { id: 'b2b_eur', label: 'B2B EUR', currency: '€' },
+  ];
+  // Aktywna kategoria
+  const [activeCategory, setActiveCategory] = useState('indywidualni');
+  // Dane per kategoria: { [catId]: { collections, priceGroups, fileName } }
+  const [catalogs, setCatalogs] = useState({
+    indywidualni: { collections: [], priceGroups: [], fileName: '' },
+    b2b_pln: { collections: [], priceGroups: [], fileName: '' },
+    b2b_eur: { collections: [], priceGroups: [], fileName: '' },
+  });
+  // Zdjęcia są WSPÓLNE dla wszystkich kategorii (te same elementy w różnych cennikach)
+  const [images, setImagesState] = useState({});
+
+  // Skróty do aktywnej kategorii
+  const activeCatalog = catalogs[activeCategory] || { collections: [], priceGroups: [], fileName: '' };
+  const collections = activeCatalog.collections;
+  const priceGroups = activeCatalog.priceGroups;
+  const fileName = activeCatalog.fileName;
+  const currency = CATEGORIES.find(c => c.id === activeCategory)?.currency || '€';
+
+  // Settery zmieniające tylko aktywną kategorię
+  const setCollections = (val) => {
+    setCatalogs(prev => ({ ...prev, [activeCategory]: { ...prev[activeCategory], collections: typeof val === 'function' ? val(prev[activeCategory].collections) : val } }));
+  };
+  const setPriceGroups = (val) => {
+    setCatalogs(prev => ({ ...prev, [activeCategory]: { ...prev[activeCategory], priceGroups: typeof val === 'function' ? val(prev[activeCategory].priceGroups) : val } }));
+  };
+  const setImages = (val) => {
+    setImagesState(prev => typeof val === 'function' ? val(prev) : val);
+  };
+  const setFileName = (val) => {
+    setCatalogs(prev => ({ ...prev, [activeCategory]: { ...prev[activeCategory], fileName: typeof val === 'function' ? val(prev[activeCategory].fileName) : val } }));
+  };
+
+  const [selectedCollectionName, setSelectedCollectionName] = useState('');
+  const [positions, setPositions] = useState([]); // pozycje wyceny
+  const [discount, setDiscount] = useState(0);
+  const [previewImage, setPreviewImage] = useState(null);
+  const [isLoading, setIsLoading] = useState(true); // ładowanie z IndexedDB
+
+  // Ładowanie zapisanych danych przy starcie aplikacji
+  useEffect(() => {
+    (async () => {
+      try {
+        const savedCatalogs = await dbGet('catalogs');
+        if (savedCatalogs) {
+          setCatalogs(prev => ({ ...prev, ...savedCatalogs }));
+        }
+        const savedImages = await dbGet('sharedImages');
+        if (savedImages) {
+          setImagesState(savedImages);
+        }
+        const savedHistory = await dbGet('quoteHistory');
+        if (savedHistory && Array.isArray(savedHistory)) {
+          setSavedQuotes(savedHistory);
+        }
+      } catch (err) {
+        console.error('Błąd wczytywania danych:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, []);
+
+  // Automatyczny zapis cenników
+  useEffect(() => {
+    if (isLoading) return;
+    (async () => {
+      try {
+        await dbSet('catalogs', catalogs);
+      } catch (err) {
+        console.error('Błąd zapisu cenników:', err);
+      }
+    })();
+  }, [catalogs, isLoading]);
+
+  // Automatyczny zapis WSPÓLNYCH zdjęć
+  useEffect(() => {
+    if (isLoading) return;
+    (async () => {
+      try {
+        await dbSet('sharedImages', images);
+      } catch (err) {
+        console.error('Błąd zapisu zdjęć:', err);
+      }
+    })();
+  }, [images, isLoading]);
+
+  // Automatyczny zapis historii wycen
+  useEffect(() => {
+    if (isLoading) return;
+    (async () => {
+      try {
+        await dbSet('quoteHistory', savedQuotes);
+      } catch (err) {
+        console.error('Błąd zapisu historii:', err);
+      }
+    })();
+  }, [savedQuotes, isLoading]);
+
+  // Awaryjny zapis przy zamykaniu strony / aplikacji
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      // Synchronicznie wymuś zapis - jeśli były niezapisane zmiany
+      try {
+        dbSet('quoteHistory', savedQuotes);
+        dbSet('catalogs', catalogs);
+        dbSet('sharedImages', images);
+      } catch (e) {}
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handleBeforeUnload);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') handleBeforeUnload();
+    });
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handleBeforeUnload);
+    };
+  }, [savedQuotes, catalogs, images]);
+
+  // ---- HISTORIA WYCEN ----
+  const generateQuoteNumber = () => {
+    const d = new Date();
+    return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+
+  const buildQuoteData = (id) => ({
+    id: id,
+    quoteNumber,
+    savedAt: new Date().toISOString(),
+    category: activeCategory,
+    categoryLabel: CATEGORIES.find(c => c.id === activeCategory)?.label,
+    currency,
+    positions,
+    discount,
+    clientName,
+    clientPhone,
+    clientEmail,
+    orderNotes,
+    orderPhotos,
+    subtotal,
+    total,
+  });
+
+  const saveCurrentQuote = (silent = false) => {
+    if (positions.length === 0) {
+      if (!silent) alert('Brak pozycji w wycenie. Najpierw dodaj pozycje.');
+      return false;
+    }
+
+    if (currentQuoteId) {
+      // NADPISZ istniejącą wycenę w historii
+      const updated = buildQuoteData(currentQuoteId);
+      setSavedQuotes(prev => prev.map(q => q.id === currentQuoteId ? updated : q));
+      if (!silent) alert(`Wycena nr ${quoteNumber} została zaktualizowana w historii.`);
+    } else {
+      // ZAPISZ jako nową
+      const newId = Date.now() + Math.random();
+      const newQuote = buildQuoteData(newId);
+      setSavedQuotes(prev => [newQuote, ...prev]);
+      setCurrentQuoteId(newId);
+      if (!silent) alert(`Wycena nr ${quoteNumber} została zapisana w historii.`);
+    }
+    return true;
+  };
+
+  // Rozpocznij NOWĄ wycenę (zaproponuj zapis aktualnej)
+  const startNewQuote = () => {
+    if (positions.length > 0 && !currentQuoteId) {
+      const confirmed = confirm(
+        `Masz ${positions.length} pozycji w aktualnej wycenie, która nie została zapisana.\n\n` +
+        `OK = Zapisz w historii i rozpocznij nową\nAnuluj = Rozpocznij nową bez zapisywania (wycena zostanie utracona)`
+      );
+      if (confirmed) {
+        saveCurrentQuote(true);
+      }
+    } else if (positions.length > 0 && currentQuoteId) {
+      // Edytowaliśmy zapisaną — zaproponuj aktualizację
+      const confirmed = confirm(
+        `Edytujesz zapisaną wycenę nr ${quoteNumber}.\n\n` +
+        `OK = Zaktualizuj w historii i rozpocznij nową\nAnuluj = Rozpocznij nową bez aktualizacji`
+      );
+      if (confirmed) {
+        saveCurrentQuote(true);
+      }
+    }
+    // Reset całej wyceny
+    setPositions([]);
+    setDiscount(0);
+    setClientName('');
+    setClientPhone('');
+    setClientEmail('');
+    setOrderNotes('');
+    setOrderPhotos([]);
+    setCurrentQuoteId(null);
+    setQuoteNumber(generateQuoteNumber());
+  };
+
+  const loadQuoteFromHistory = (quote) => {
+    // Najpierw sprawdź czy aktualna wycena nie powinna być zapisana
+    if (positions.length > 0 && !currentQuoteId) {
+      const confirmed = confirm(
+        `Masz aktualnie ${positions.length} niezapisanych pozycji.\n\n` +
+        `OK = Zapisz aktualną i wczytaj wybraną\nAnuluj = Wczytaj wybraną BEZ zapisywania aktualnej`
+      );
+      if (confirmed) {
+        saveCurrentQuote(true);
+      }
+    }
+
+    // Przełącz kategorię jeśli inna
+    if (quote.category !== activeCategory) {
+      setActiveCategory(quote.category);
+      setTimeout(() => {
+        setQuoteNumber(quote.quoteNumber);
+        setCurrentQuoteId(quote.id);
+        setPositions(quote.positions);
+        setDiscount(quote.discount || 0);
+        setClientName(quote.clientName || '');
+        setClientPhone(quote.clientPhone || '');
+        setClientEmail(quote.clientEmail || '');
+        setOrderNotes(quote.orderNotes || '');
+        setOrderPhotos(quote.orderPhotos || []);
+      }, 100);
+    } else {
+      setQuoteNumber(quote.quoteNumber);
+      setCurrentQuoteId(quote.id);
+      setPositions(quote.positions);
+      setDiscount(quote.discount || 0);
+      setClientName(quote.clientName || '');
+      setClientPhone(quote.clientPhone || '');
+      setClientEmail(quote.clientEmail || '');
+      setOrderNotes(quote.orderNotes || '');
+      setOrderPhotos(quote.orderPhotos || []);
+    }
+    setHistoryPanelOpen(false);
+  };
+
+  const deleteQuoteFromHistory = (id) => {
+    if (!confirm('Czy na pewno chcesz usunąć tę wycenę z historii?')) return;
+    setSavedQuotes(savedQuotes.filter(q => q.id !== id));
+    // Jeśli usuwamy aktualnie edytowaną, oznacz jako nową
+    if (currentQuoteId === id) {
+      setCurrentQuoteId(null);
+    }
+  };
+
+  // ZMIANA KATEGORII - pytaj o zapisanie wyceny
+  const handleCategoryChange = (newCategoryId) => {
+    if (newCategoryId === activeCategory) return;
+    if (positions.length > 0) {
+      const confirmed = confirm(
+        `Masz ${positions.length} pozycji w aktualnej wycenie. Czy chcesz ją zapisać przed przełączeniem kategorii?\n\n` +
+        `OK = Zapisz i przełącz\nAnuluj = Przełącz bez zapisywania (wycena zostanie utracona)`
+      );
+      if (confirmed) {
+        saveCurrentQuote(true);
+      }
+    }
+    // Reset aktualnej wyceny przy zmianie kategorii
+    setCurrentQuoteId(null);
+    setQuoteNumber(generateQuoteNumber());
+    setActiveCategory(newCategoryId);
+  };
+
+  // Po zmianie aktywnej kategorii — wyczyść wycenę (różne cenniki, różne ceny)
+  // i ustaw pierwszą kolekcję jako wybraną
+  useEffect(() => {
+    setPositions([]);
+    setSelectedCollectionName(collections[0]?.name || '');
+  }, [activeCategory]);
+
+  // Modal dodawania pozycji
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalElement, setModalElement] = useState('');
+  const [modalGroup, setModalGroup] = useState('');
+
+  // Panel diagnostyczny zdjęć
+  const [imageDebugOpen, setImageDebugOpen] = useState(false);
+
+  // Dane klienta + numer wyceny
+  const [clientPanelOpen, setClientPanelOpen] = useState(false);
+  const [clientName, setClientName] = useState('');
+  const [clientPhone, setClientPhone] = useState('');
+  const [clientEmail, setClientEmail] = useState('');
+
+  // Uwagi do zamówienia + zdjęcia do zamówienia (np. tkaniny, próbniki)
+  const [orderNotes, setOrderNotes] = useState('');
+  const [orderPhotos, setOrderPhotos] = useState([]); // [{ id, dataUrl, label }]
+  const orderPhotoInputRef = useRef(null);
+  const orderPhotoCameraRef = useRef(null);
+
+  // Historia wycen
+  const [savedQuotes, setSavedQuotes] = useState([]);
+  const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
+  // ID aktualnie edytowanej wyceny w historii (null = nowa, nie zapisana jeszcze)
+  const [currentQuoteId, setCurrentQuoteId] = useState(null);
+  // Numer aktualnej wyceny - generuje się raz, przy nowej wycenie
+  const [quoteNumber, setQuoteNumber] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
+  });
+
+  const excelInputRef = useRef(null);
+  const imagesInputRef = useRef(null);
+  const imagesFolderInputRef = useRef(null);
+
+  const selectedCollection = useMemo(
+    () => collections.find(c => c.name === selectedCollectionName) || null,
+    [collections, selectedCollectionName]
+  );
+
+  // ---- WCZYTYWANIE EXCELA ----
+  const handleExcelUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setFileName(file.name);
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const data = new Uint8Array(evt.target.result);
+      const workbook = window.XLSX.read(data, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+      if (rows.length < 2) return;
+
+      const headers = rows[0];
+      const groups = headers.slice(2).map(h => String(h).trim()).filter(h => h !== '');
+      setPriceGroups(groups);
+
+      const collectionsMap = {};
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        const collectionName = String(row[0] || '').trim();
+        const elementName = String(row[1] || '').trim();
+        if (!collectionName || !elementName) continue;
+
+        if (!collectionsMap[collectionName]) {
+          collectionsMap[collectionName] = { name: collectionName, elements: [] };
+        }
+        const prices = {};
+        groups.forEach((g, idx) => {
+          const val = row[2 + idx];
+          const num = parseFloat(String(val).replace(',', '.').replace(/[^\d.-]/g, ''));
+          prices[g] = isNaN(num) ? 0 : num;
+        });
+        collectionsMap[collectionName].elements.push({ name: elementName, prices });
+      }
+      const parsed = Object.values(collectionsMap);
+      setCollections(parsed);
+      setSelectedCollectionName(parsed[0]?.name || '');
+      setPositions([]);
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  // ---- WCZYTYWANIE ZDJĘĆ ----
+  // Normalizacja: usuwa polskie znaki, znaki specjalne, podwójne spacje, lowercase
+  const normalizeKey = (name) => {
+    return String(name)
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // usuwa diakrytyki (ą→a, ę→e, ó→o itd.)
+      .replace(/ł/g, 'l') // ł nie jest objęte NFD
+      .replace(/[_\-.,()]/g, ' ') // myślniki/podkreślenia/kropki/przecinki → spacja
+      .replace(/\s+/g, ' ') // wielokrotne spacje → jedna
+      .trim();
+  };
+
+  const handleImagesUpload = (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+
+    let processed = 0;
+    let added = 0;
+    const newMap = { ...images };
+
+    const finish = () => {
+      setImages(newMap);
+      e.target.value = '';
+      if (added === 0) {
+        alert(`Wybrano ${files.length} ${files.length === 1 ? 'plik' : 'plików'}, ale żaden nie jest obrazem (JPG/PNG/WEBP). Sprawdź pliki.`);
+      } else {
+        alert(`Wczytano ${added} ${added === 1 ? 'zdjęcie' : 'zdjęć'}. Kliknij "Zdjęcia" w nagłówku, aby sprawdzić dopasowanie.`);
+      }
+    };
+
+    files.forEach(file => {
+      const ext = file.name.split('.').pop().toLowerCase();
+      const isImage = file.type.startsWith('image/') ||
+        ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'svg'].includes(ext);
+
+      if (!isImage) {
+        processed++;
+        if (processed === files.length) finish();
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const baseName = file.name.replace(/\.[^/.]+$/, '');
+        const key = normalizeKey(baseName);
+        newMap[key] = ev.target.result; // data URL (base64)
+        added++;
+        processed++;
+        if (processed === files.length) finish();
+      };
+      reader.onerror = () => {
+        processed++;
+        if (processed === files.length) finish();
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const getImage = (elementName) => {
+    const key = normalizeKey(elementName);
+    return images[key] || null;
+  };
+
+  // ---- MODAL ----
+  const openAddModal = () => {
+    setModalElement('');
+    setModalGroup('');
+    setModalOpen(true);
+  };
+
+  const confirmAdd = () => {
+    if (!modalElement || !modalGroup) return;
+    const el = selectedCollection.elements.find(e => e.name === modalElement);
+    if (!el) return;
+    const price = el.prices[modalGroup] || 0;
+
+    setPositions([...positions, {
+      id: Date.now() + Math.random(),
+      collection: selectedCollection.name,
+      elementName: el.name,
+      group: modalGroup,
+      price,
+      qty: 1,
+    }]);
+    setModalOpen(false);
+  };
+
+  // ---- ZMIANA GRUPY W POZYCJI (bez usuwania) ----
+  const changePositionGroup = (id, newGroup) => {
+    setPositions(positions.map(p => {
+      if (p.id !== id) return p;
+      const col = collections.find(c => c.name === p.collection);
+      const el = col?.elements.find(e => e.name === p.elementName);
+      const newPrice = el?.prices[newGroup] || 0;
+      return { ...p, group: newGroup, price: newPrice };
+    }));
+  };
+
+  const updateQty = (id, newQty) => {
+    if (newQty < 1) return;
+    setPositions(positions.map(p => p.id === id ? { ...p, qty: newQty } : p));
+  };
+
+  const removePosition = (id) => setPositions(positions.filter(p => p.id !== id));
+  const clearAll = () => {
+    setPositions([]);
+    setOrderNotes('');
+    setOrderPhotos([]);
+  };
+
+  // ---- ZDJĘCIA DO ZAMÓWIENIA ----
+  const handleOrderPhotoUpload = (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+
+    let processed = 0;
+    const newPhotos = [];
+
+    files.forEach(file => {
+      if (!file.type.startsWith('image/')) {
+        processed++;
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        newPhotos.push({
+          id: Date.now() + Math.random(),
+          dataUrl: ev.target.result,
+          label: '',
+        });
+        processed++;
+        if (processed === files.length) {
+          setOrderPhotos(prev => [...prev, ...newPhotos]);
+        }
+      };
+      reader.onerror = () => {
+        processed++;
+        if (processed === files.length && newPhotos.length > 0) {
+          setOrderPhotos(prev => [...prev, ...newPhotos]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
+
+  const removeOrderPhoto = (id) => {
+    setOrderPhotos(orderPhotos.filter(p => p.id !== id));
+  };
+
+  const updateOrderPhotoLabel = (id, label) => {
+    setOrderPhotos(orderPhotos.map(p => p.id === id ? { ...p, label } : p));
+  };
+
+  // ---- GENEROWANIE PDF (przez okno wydruku przeglądarki) ----
+  const generatePdfHtml = () => {
+    const dateStr = new Date().toLocaleDateString('pl-PL', { day: '2-digit', month: 'long', year: 'numeric' });
+
+    const positionRows = positions.map((pos, idx) => {
+      const img = getImage(pos.elementName);
+      return `
+        <tr>
+          <td style="text-align:center;font-weight:600;color:#92400e;">${idx + 1}</td>
+          <td style="text-align:center;">
+            ${img ? `<img src="${img}" style="width:60px;height:60px;object-fit:contain;" />` : ''}
+          </td>
+          <td>
+            <div style="font-weight:600;">${pos.elementName}</div>
+            <div style="font-size:11px;color:#857461;text-transform:uppercase;letter-spacing:1px;">${pos.collection}</div>
+          </td>
+          <td style="text-align:center;">${pos.group}</td>
+          <td style="text-align:center;">${pos.qty}</td>
+          <td style="text-align:right;">${fmt(pos.price)}</td>
+          <td style="text-align:right;font-weight:600;">${fmt(pos.price * pos.qty)}</td>
+        </tr>
+      `;
+    }).join('');
+
+    return `
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>Wycena ${quoteNumber}</title>
+<style>
+  @page { size: A4; margin: 1.5cm; }
+  * { box-sizing: border-box; }
+  body { font-family: Georgia, 'Cormorant Garamond', serif; color: #3d342a; margin: 0; padding: 0; }
+  .header { background: #fef3e2; color: #3d342a; padding: 24px 30px; border-bottom: 4px solid #a16207; margin-bottom: 24px; }
+  .header .label { font-size: 10px; letter-spacing: 0.4em; color: #a16207; margin-bottom: 4px; }
+  .header h1 { font-size: 28px; font-weight: 300; margin: 0; }
+  .header .num { font-size: 13px; color: #a89887; margin-top: 6px; }
+  .meta-row { display: flex; justify-content: space-between; padding: 0 30px; margin-bottom: 20px; font-size: 13px; }
+  .meta-block { background: #faf6ef; border: 1px solid #e8ddd0; padding: 12px 16px; flex: 1; margin-right: 12px; }
+  .meta-block:last-child { margin-right: 0; }
+  .meta-block .label { font-size: 9px; letter-spacing: 0.3em; color: #857461; text-transform: uppercase; margin-bottom: 4px; }
+  .meta-block .val { font-size: 14px; color: #3d342a; }
+  table { width: calc(100% - 60px); margin: 0 30px; border-collapse: collapse; font-size: 12px; }
+  thead { background: #fef3e2; color: #3d342a; }
+  th { padding: 10px 8px; text-transform: uppercase; letter-spacing: 1px; font-size: 10px; font-weight: 600; text-align: left; }
+  th:first-child, th:nth-child(2), th:nth-child(4), th:nth-child(5) { text-align: center; }
+  th:nth-child(6), th:nth-child(7) { text-align: right; }
+  td { padding: 10px 8px; border-bottom: 1px solid #e8ddd0; vertical-align: middle; }
+  .summary { margin: 30px 30px 0 30px; background: #faf6ef; border: 1px solid #e8ddd0; padding: 18px 22px; }
+  .summary-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; }
+  .summary-row.discount { color: #a16207; }
+  .summary-row.total { border-top: 2px solid #3d342a; margin-top: 8px; padding-top: 14px; font-size: 22px; font-weight: 400; }
+  .summary-row.total .label { font-size: 10px; letter-spacing: 0.3em; color: #857461; text-transform: uppercase; align-self: center; }
+  .notes { margin: 24px 30px; padding: 14px 18px; background: #f8f2e8; border-left: 4px solid #a16207; font-size: 12px; color: #5c5043; }
+  .order-photos { margin: 24px 30px; }
+  .order-photos-title { font-size: 10px; letter-spacing: 0.3em; color: #857461; text-transform: uppercase; margin-bottom: 10px; }
+  .order-photos-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .order-photo { border: 1px solid #e8ddd0; padding: 6px; background: #faf6ef; }
+  .order-photo img { width: 100%; height: 120px; object-fit: cover; display: block; }
+  .order-photo-label { font-size: 10px; color: #5c5043; margin-top: 4px; text-align: center; }
+  .footer { margin: 40px 30px 0 30px; padding-top: 16px; border-top: 1px solid #e8ddd0; font-size: 11px; color: #857461; text-align: center; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="label">SHOWROOM · WYCENA</div>
+    <h1>Wycena mebli modułowych</h1>
+    <div class="num">Nr ${quoteNumber} · ${dateStr}</div>
+  </div>
+
+  <div class="meta-row">
+    <div class="meta-block">
+      <div class="label">Klient</div>
+      <div class="val">${clientName || '—'}</div>
+    </div>
+    <div class="meta-block">
+      <div class="label">Telefon</div>
+      <div class="val">${clientPhone || '—'}</div>
+    </div>
+    <div class="meta-block">
+      <div class="label">E-mail</div>
+      <div class="val">${clientEmail || '—'}</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Lp.</th>
+        <th>Foto</th>
+        <th>Element / Kolekcja</th>
+        <th>Grupa</th>
+        <th>Ilość</th>
+        <th>Cena jedn.</th>
+        <th>Wartość</th>
+      </tr>
+    </thead>
+    <tbody>${positionRows}</tbody>
+  </table>
+
+  <div class="summary">
+    <div class="summary-row">
+      <span>Suma częściowa</span>
+      <span>${fmt(subtotal)}</span>
+    </div>
+    ${discount > 0 ? `
+      <div class="summary-row discount">
+        <span>Rabat ${discount}%</span>
+        <span>− ${fmt(discountValue)}</span>
+      </div>
+    ` : ''}
+    <div class="summary-row total">
+      <span class="label">Do zapłaty</span>
+      <span>${fmt(total)}</span>
+    </div>
+  </div>
+
+  ${orderNotes ? `<div class="notes"><strong>Uwagi do zamówienia:</strong> ${orderNotes}</div>` : ''}
+
+  ${orderPhotos.length > 0 ? `
+    <div class="order-photos">
+      <div class="order-photos-title">Zdjęcia do zamówienia</div>
+      <div class="order-photos-grid">
+        ${orderPhotos.map(p => `
+          <div class="order-photo">
+            <img src="${p.dataUrl}" />
+            ${p.label ? `<div class="order-photo-label">${p.label}</div>` : ''}
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  ` : ''}
+
+  <div class="footer">
+    Wycena wygenerowana automatycznie · ważna 14 dni od daty wystawienia
+  </div>
+</body>
+</html>
+    `;
+  };
+
+  const handleSavePdf = () => {
+    if (positions.length === 0) {
+      alert('Brak pozycji w wycenie. Dodaj najpierw pozycje.');
+      return;
+    }
+    const html = generatePdfHtml();
+
+    // Usuń stary iframe jeśli istnieje
+    const oldIframe = document.getElementById('pdf-print-iframe');
+    if (oldIframe) oldIframe.remove();
+
+    // Utwórz ukryty iframe do druku
+    const iframe = document.createElement('iframe');
+    iframe.id = 'pdf-print-iframe';
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    // Poczekaj aż obrazki się załadują, potem drukuj
+    iframe.onload = () => {
+      setTimeout(() => {
+        try {
+          iframe.contentWindow.focus();
+          iframe.contentWindow.print();
+        } catch (e) {
+          alert('Nie udało się otworzyć okna wydruku. Spróbuj ponownie.');
+        }
+      }, 600);
+    };
+  };
+
+  // Podgląd HTML w nakładce
+  const [htmlPreviewOpen, setHtmlPreviewOpen] = useState(false);
+  const [htmlPreviewContent, setHtmlPreviewContent] = useState('');
+
+  const handlePreviewHtml = () => {
+    if (positions.length === 0) {
+      alert('Brak pozycji w wycenie. Dodaj najpierw pozycje.');
+      return;
+    }
+    setHtmlPreviewContent(generatePdfHtml());
+    setHtmlPreviewOpen(true);
+  };
+
+  const handleSendMail = () => {
+    if (positions.length === 0) {
+      alert('Brak pozycji w wycenie. Dodaj najpierw pozycje.');
+      return;
+    }
+
+    const dateStr = new Date().toLocaleDateString('pl-PL');
+    let body = `Wycena nr ${quoteNumber}\n`;
+    body += `Data: ${dateStr}\n\n`;
+    if (clientName) body += `Klient: ${clientName}\n`;
+    if (clientPhone) body += `Telefon: ${clientPhone}\n`;
+    if (clientEmail) body += `E-mail: ${clientEmail}\n`;
+    body += `\n--- POZYCJE ---\n\n`;
+
+    positions.forEach((pos, idx) => {
+      body += `${idx + 1}. ${pos.elementName} (${pos.collection})\n`;
+      body += `   Grupa: ${pos.group} · Ilość: ${pos.qty} · ${fmt(pos.price)} = ${fmt(pos.price * pos.qty)}\n\n`;
+    });
+
+    body += `--- PODSUMOWANIE ---\n`;
+    body += `Suma częściowa: ${fmt(subtotal)}\n`;
+    if (discount > 0) body += `Rabat ${discount}%: − ${fmt(discountValue)}\n`;
+    body += `DO ZAPŁATY: ${fmt(total)}\n`;
+    if (orderNotes) body += `\nUwagi do zamówienia: ${orderNotes}\n`;
+    if (orderPhotos.length > 0) {
+      body += `\nDołączono ${orderPhotos.length} ${orderPhotos.length === 1 ? 'zdjęcie' : 'zdjęć'} do zamówienia (zapisz wycenę jako PDF aby zobaczyć).`;
+      const labeled = orderPhotos.filter(p => p.label).map(p => `- ${p.label}`).join('\n');
+      if (labeled) body += `\nOpisy zdjęć:\n${labeled}\n`;
+    }
+
+    const subject = `Wycena ${quoteNumber}${clientName ? ' — ' + clientName : ''}`;
+    const mailto = `mailto:info@beatris.eu?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = mailto;
+  };
+
+  // ---- PODSUMOWANIE ----
+  const subtotal = useMemo(() => positions.reduce((s, p) => s + p.price * p.qty, 0), [positions]);
+  const discountValue = subtotal * (discount / 100);
+  const total = subtotal - discountValue;
+  const fmt = (n) => `${n.toFixed(2).replace('.', ',')} ${currency}`;
+
+  // ---- WIDOK STARTOWY ----
+  // Ekran ładowania zanim wczytamy zapisane dane z IndexedDB
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-orange-50 flex items-center justify-center" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}>
+        <div className="text-center">
+          <div className="inline-block w-12 h-12 border-4 border-stone-300 border-t-yellow-800 rounded-full animate-spin mb-4"></div>
+          <div className="text-stone-700 tracking-wider uppercase text-sm">Wczytywanie aplikacji...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (collections.length === 0) {
+    return (
+      <div className="min-h-screen bg-orange-50 flex flex-col items-center justify-center p-6" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}>
+        {/* Zakładki kategorii na ekranie startowym */}
+        <div className="max-w-2xl w-full mb-4 flex gap-1">
+          {CATEGORIES.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => handleCategoryChange(cat.id)}
+              className={`flex-1 px-4 py-3 text-xs tracking-wider uppercase transition-all border-b-4 ${
+                activeCategory === cat.id
+                  ? 'bg-orange-100 text-stone-800 border-yellow-800 font-bold'
+                  : 'bg-stone-200 text-stone-500 border-transparent hover:bg-orange-100'
+              }`}
+            >
+              {cat.label}
+              {catalogs[cat.id].collections.length > 0 && (
+                <span className="ml-2 text-yellow-700">✓</span>
+              )}
+            </button>
+          ))}
+        </div>
+        <div className="max-w-2xl w-full bg-white shadow-2xl border border-stone-300">
+          <div className="bg-orange-100 text-stone-800 px-10 py-8 border-b-4 border-yellow-800">
+            <div className="text-xs tracking-[0.4em] text-yellow-700 mb-2">
+              SHOWROOM · WYCENY · {CATEGORIES.find(c => c.id === activeCategory)?.label}
+            </div>
+            <h1 className="text-5xl font-light tracking-tight">Konfigurator</h1>
+            <div className="text-stone-500 mt-2 italic">
+              Wgraj cennik dla kategorii: <strong>{CATEGORIES.find(c => c.id === activeCategory)?.label}</strong> ({CATEGORIES.find(c => c.id === activeCategory)?.currency})
+            </div>
+          </div>
+
+          <div className="p-10 space-y-6">
+            <div>
+              <div className="text-sm tracking-wider uppercase text-stone-500 mb-3">Krok 1 · Wymagane</div>
+              <button
+                onClick={() => excelInputRef.current?.click()}
+                className="w-full bg-yellow-800 hover:bg-yellow-900 text-white px-6 py-5 flex items-center justify-center gap-3 transition-colors"
+              >
+                <FileSpreadsheet size={24} />
+                <span className="text-xl tracking-wide">Wczytaj plik Excel z cennikiem</span>
+              </button>
+              <input ref={excelInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleExcelUpload} className="hidden" />
+            </div>
+
+            <div>
+              <div className="text-sm tracking-wider uppercase text-stone-500 mb-3">Krok 2 · Opcjonalne</div>
+              <button
+                onClick={() => imagesInputRef.current?.click()}
+                className="w-full bg-orange-100 hover:bg-stone-300 text-stone-700 px-6 py-4 flex items-center justify-center gap-3 transition-colors border border-stone-300"
+              >
+                <FolderOpen size={20} />
+                <span className="tracking-wide">Wskaż folder z rysunkami / zdjęciami</span>
+              </button>
+              <input ref={imagesInputRef} type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp" multiple onChange={handleImagesUpload} className="hidden" />
+              <input ref={imagesFolderInputRef} type="file" accept="image/*" multiple webkitdirectory="" directory="" onChange={handleImagesUpload} className="hidden" />
+              <div className="text-xs text-stone-500 mt-2 italic">
+                Nazwa pliku musi odpowiadać nazwie modułu z Excela (np. <span className="font-mono">narożnik_lewy.jpg</span>)
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- GŁÓWNY WIDOK ----
+  return (
+    <div className="h-screen flex flex-col bg-orange-50" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}>
+
+      {/* NAGŁÓWEK - STAŁY */}
+      <header className="bg-orange-100 text-stone-800 border-b-4 border-yellow-800 flex-shrink-0">
+        <div className="px-6 py-3 flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <div className="text-[9px] tracking-[0.4em] text-yellow-700">SHOWROOM · WYCENY</div>
+            <h1 className="text-lg font-light tracking-tight">Konfigurator mebli modułowych</h1>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="text-[10px] text-stone-500 hidden md:block">
+              <FileSpreadsheet size={12} className="inline mr-1" />
+              {fileName}
+            </div>
+            <button
+              onClick={() => setImageDebugOpen(true)}
+              className="bg-orange-50 hover:bg-yellow-800 text-stone-800 border border-stone-300 hover:border-yellow-800 px-2 py-1.5 text-[10px] tracking-wider uppercase flex items-center gap-1 transition-colors"
+              title="Zarządzaj zdjęciami elementów"
+            >
+              <FolderOpen size={12} />
+              Zdjęcia
+              {Object.keys(images).length > 0 && (
+                <span className="bg-yellow-800 text-white px-1.5 py-0.5 text-[9px] rounded">
+                  {Object.keys(images).length}
+                </span>
+              )}
+            </button>
+            <input
+              ref={imagesInputRef}
+              type="file"
+              accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp"
+              multiple
+              onChange={handleImagesUpload}
+              className="hidden"
+            />
+            <input
+              ref={imagesFolderInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              webkitdirectory=""
+              directory=""
+              onChange={handleImagesUpload}
+              className="hidden"
+            />
+            <div className="text-[10px] text-stone-600 mr-1 flex items-center gap-1 border-r border-stone-300 pr-2">
+              <span className="opacity-60">WYCENA</span>
+              <span className="font-bold">{quoteNumber}</span>
+              {currentQuoteId ? (
+                <span className="text-yellow-700" title="Zapisana w historii">●</span>
+              ) : positions.length > 0 ? (
+                <span className="text-red-600" title="Niezapisana">●</span>
+              ) : null}
+            </div>
+            <button
+              onClick={() => setHistoryPanelOpen(true)}
+              className="bg-orange-50 hover:bg-orange-100 text-stone-800 border border-stone-300 px-3 py-1.5 text-[10px] tracking-wider uppercase flex items-center gap-1 transition-colors"
+              title="Historia zapisanych wycen"
+            >
+              📋 Historia
+              {savedQuotes.length > 0 && (
+                <span className="bg-yellow-800 text-white px-1.5 py-0.5 text-[9px] rounded">
+                  {savedQuotes.length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={startNewQuote}
+              className="bg-orange-50 hover:bg-orange-100 text-stone-800 border border-stone-300 px-3 py-1.5 text-[10px] tracking-wider uppercase flex items-center gap-1 transition-colors"
+              title="Rozpocznij nową wycenę"
+            >
+              ✨ Nowa
+            </button>
+            <button
+              onClick={() => saveCurrentQuote()}
+              disabled={positions.length === 0}
+              className="bg-yellow-800 hover:bg-yellow-900 text-white px-3 py-1.5 text-[10px] tracking-wider uppercase flex items-center gap-1 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              title={currentQuoteId ? 'Aktualizuj zapisaną wycenę' : 'Zapisz wycenę w historii'}
+            >
+              💾 {currentQuoteId ? 'Aktualizuj' : 'Zapisz'}
+            </button>
+            <button
+              onClick={async () => {
+                const catLabel = CATEGORIES.find(c => c.id === activeCategory)?.label;
+                if (!confirm(`Czy na pewno chcesz wymienić cennik kategorii "${catLabel}"? Stare dane Excela tej kategorii zostaną usunięte. Zdjęcia pozostaną (są wspólne dla wszystkich kategorii).`)) return;
+                setCatalogs(prev => ({
+                  ...prev,
+                  [activeCategory]: { collections: [], priceGroups: [], fileName: '' }
+                }));
+                setPositions([]);
+              }}
+              className="text-[10px] text-stone-500 hover:text-yellow-700 tracking-wider uppercase"
+            >
+              Wymień cennik
+            </button>
+          </div>
+        </div>
+
+        {/* ZAKŁADKI KATEGORII CENNIKA */}
+        <div className="flex bg-stone-200 border-t border-stone-300">
+          {CATEGORIES.map(cat => {
+            const hasData = catalogs[cat.id].collections.length > 0;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => handleCategoryChange(cat.id)}
+                className={`flex-1 px-4 py-2.5 text-xs tracking-wider uppercase transition-all border-b-4 ${
+                  activeCategory === cat.id
+                    ? 'bg-orange-100 text-stone-800 border-yellow-800 font-bold'
+                    : 'bg-stone-200 text-stone-500 border-transparent hover:bg-orange-50'
+                }`}
+              >
+                {cat.label}
+                <span className="ml-1 opacity-70">({cat.currency})</span>
+                {hasData && activeCategory !== cat.id && (
+                  <span className="ml-2 text-yellow-700">✓</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* PASEK WYBORU KOLEKCJI - STAŁY POD NAGŁÓWKIEM */}
+        <div className="px-6 py-3 bg-orange-50 border-t border-stone-300 flex items-center gap-4 flex-wrap">
+          <div className="text-[10px] tracking-[0.3em] text-yellow-700 uppercase">Kolekcja</div>
+          <div className="relative flex-1 max-w-xs">
+            <select
+              value={selectedCollectionName}
+              onChange={e => setSelectedCollectionName(e.target.value)}
+              className="w-full bg-orange-100 border border-stone-400 text-stone-800 px-3 py-2 text-sm appearance-none focus:outline-none focus:border-yellow-800 cursor-pointer pr-8"
+            >
+              {collections.map(c => (
+                <option key={c.name} value={c.name}>{c.name}</option>
+              ))}
+            </select>
+            <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-500 pointer-events-none" />
+          </div>
+          {selectedCollection && (
+            <div className="text-[10px] text-stone-500 italic">
+              {selectedCollection.elements.length} modułów dostępnych
+            </div>
+          )}
+          <button
+            onClick={openAddModal}
+            disabled={!selectedCollection}
+            className="bg-yellow-800 hover:bg-yellow-900 text-white px-4 py-2 text-xs tracking-wider uppercase flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
+          >
+            <Plus size={14} />
+            Dodaj pozycję
+          </button>
+        </div>
+
+        {/* PASEK DANYCH KLIENTA - widoczny tylko gdy klient jest wpisany */}
+        {(clientName || clientPhone || clientEmail) && (
+          <div className="px-6 py-2 bg-yellow-800 text-white border-t border-yellow-900 flex items-center gap-4 flex-wrap text-xs">
+            <div className="flex items-center gap-2">
+              <User size={14} />
+              <span className="tracking-wider uppercase text-[10px] opacity-80">Klient:</span>
+            </div>
+            {clientName && (
+              <div className="font-medium">{clientName}</div>
+            )}
+            {clientPhone && (
+              <div className="opacity-90">📞 {clientPhone}</div>
+            )}
+            {clientEmail && (
+              <div className="opacity-90">✉ {clientEmail}</div>
+            )}
+            <button
+              onClick={() => setClientPanelOpen(true)}
+              className="ml-auto text-[10px] tracking-wider uppercase opacity-80 hover:opacity-100 underline"
+            >
+              Edytuj
+            </button>
+          </div>
+        )}
+      </header>
+
+      {/* ŚRODEK - LISTA POZYCJI - PRZEWIJALNA */}
+      <main className="flex-1 overflow-y-auto px-4 py-3">
+        {positions.length === 0 ? (
+          <div className="h-full flex items-center justify-center">
+            <button
+              onClick={openAddModal}
+              disabled={!selectedCollection}
+              className="border-2 border-dashed border-stone-300 hover:border-yellow-800 hover:bg-white transition-all py-12 px-12 flex flex-col items-center gap-3 text-stone-500 hover:text-yellow-800 group disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="w-16 h-16 border-2 border-current flex items-center justify-center group-hover:bg-yellow-800 group-hover:text-white group-hover:border-yellow-800 transition-all">
+                <Plus size={32} />
+              </div>
+              <span className="text-lg tracking-wide">Dodaj pierwszą pozycję</span>
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2 max-w-6xl mx-auto">
+            {positions.map((pos, idx) => {
+              const img = getImage(pos.elementName);
+              const col = collections.find(c => c.name === pos.collection);
+              const el = col?.elements.find(e => e.name === pos.elementName);
+              const availableGroups = priceGroups.filter(g => (el?.prices[g] || 0) > 0);
+
+              return (
+                <div key={pos.id} className="bg-white border border-stone-200 hover:shadow-md transition-shadow flex items-center gap-4 px-4 py-3">
+                  {/* Numer */}
+                  <div className="w-12 h-12 bg-yellow-800 text-white flex items-center justify-center font-bold text-xl flex-shrink-0">
+                    {idx + 1}
+                  </div>
+
+                  {/* Zdjęcie */}
+                  <div
+                    className="w-24 h-24 bg-stone-50 border border-stone-200 flex items-center justify-center flex-shrink-0 cursor-pointer"
+                    onClick={() => img && setPreviewImage(img)}
+                  >
+                    {img ? (
+                      <img src={img} alt={pos.elementName} className="w-full h-full object-contain p-1" />
+                    ) : (
+                      <ImageIcon size={28} className="text-stone-500" />
+                    )}
+                  </div>
+
+                  {/* Nazwa i kolekcja */}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] tracking-wider text-yellow-800 uppercase truncate">{pos.collection}</div>
+                    <div className="text-xl font-medium text-stone-800 truncate">{pos.elementName}</div>
+                  </div>
+
+                  {/* Grupa */}
+                  <div className="flex-shrink-0">
+                    <div className="text-[10px] tracking-wider uppercase text-stone-500 mb-1">Grupa</div>
+                    <div className="relative w-28">
+                      <select
+                        value={pos.group}
+                        onChange={e => changePositionGroup(pos.id, e.target.value)}
+                        className="w-full bg-stone-50 border border-stone-300 px-3 py-2 text-sm appearance-none focus:outline-none focus:border-yellow-800 cursor-pointer pr-7"
+                        title="Grupa cenowa"
+                      >
+                        {availableGroups.map(g => (
+                          <option key={g} value={g}>{g}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-500 pointer-events-none" />
+                    </div>
+                  </div>
+
+                  {/* Ilość */}
+                  <div className="flex-shrink-0">
+                    <div className="text-[10px] tracking-wider uppercase text-stone-500 mb-1">Ilość</div>
+                    <div className="flex items-center border border-stone-300 bg-white">
+                      <button onClick={() => updateQty(pos.id, pos.qty - 1)} className="px-3 py-2 hover:bg-orange-50 text-stone-600 text-lg">−</button>
+                      <input
+                        type="number"
+                        min="1"
+                        value={pos.qty}
+                        onChange={e => updateQty(pos.id, parseInt(e.target.value) || 1)}
+                        className="w-10 text-base text-center bg-transparent focus:outline-none py-2 font-medium"
+                      />
+                      <button onClick={() => updateQty(pos.id, pos.qty + 1)} className="px-3 py-2 hover:bg-orange-50 text-stone-600 text-lg">+</button>
+                    </div>
+                  </div>
+
+                  {/* Cena */}
+                  <div className="text-right w-32 flex-shrink-0">
+                    <div className="text-[10px] tracking-wider uppercase text-stone-500 mb-1">Wartość</div>
+                    <div className="text-xl font-semibold text-stone-800">{fmt(pos.price * pos.qty)}</div>
+                    {pos.qty > 1 && (
+                      <div className="text-[10px] text-stone-500">{fmt(pos.price)} × {pos.qty}</div>
+                    )}
+                  </div>
+
+                  {/* Usuń */}
+                  <button
+                    onClick={() => removePosition(pos.id)}
+                    className="bg-orange-50 hover:bg-red-600 hover:text-white text-stone-500 p-3 transition-colors flex-shrink-0"
+                    title="Usuń pozycję"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              );
+            })}
+
+            {/* Przycisk + na dole listy */}
+            <button
+              onClick={openAddModal}
+              className="w-full border-2 border-dashed border-stone-300 hover:border-yellow-800 hover:bg-orange-50 transition-all py-5 flex items-center justify-center gap-3 text-stone-500 hover:text-yellow-800"
+            >
+              <Plus size={22} />
+              <span className="text-base tracking-wide">Dodaj kolejną pozycję</span>
+            </button>
+
+            {/* SEKCJA: UWAGI I ZDJĘCIA DO ZAMÓWIENIA */}
+            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Uwagi */}
+              <div className="bg-white border border-stone-200 p-4">
+                <div className="text-[10px] tracking-[0.3em] text-yellow-700 uppercase mb-2">Uwagi do zamówienia</div>
+                <textarea
+                  value={orderNotes}
+                  onChange={e => setOrderNotes(e.target.value)}
+                  placeholder="Np. kolor tkaniny, termin dostawy, dodatkowe wymagania, kod próbnika..."
+                  rows="5"
+                  className="w-full bg-orange-50 border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-yellow-800 resize-none"
+                />
+              </div>
+
+              {/* Zdjęcia */}
+              <div className="bg-white border border-stone-200 p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[10px] tracking-[0.3em] text-yellow-700 uppercase">
+                    Zdjęcia do zamówienia ({orderPhotos.length})
+                  </div>
+                </div>
+
+                <div className="flex gap-2 mb-3">
+                  <button
+                    onClick={() => orderPhotoCameraRef.current?.click()}
+                    className="flex-1 bg-yellow-800 hover:bg-yellow-900 text-white px-3 py-2 text-xs tracking-wider uppercase flex items-center justify-center gap-2"
+                  >
+                    📷 Zrób zdjęcie
+                  </button>
+                  <button
+                    onClick={() => orderPhotoInputRef.current?.click()}
+                    className="flex-1 bg-orange-50 hover:bg-orange-100 border border-stone-400 text-stone-800 px-3 py-2 text-xs tracking-wider uppercase flex items-center justify-center gap-2"
+                  >
+                    🖼 Z galerii
+                  </button>
+                </div>
+
+                <input
+                  ref={orderPhotoCameraRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleOrderPhotoUpload}
+                  className="hidden"
+                />
+                <input
+                  ref={orderPhotoInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleOrderPhotoUpload}
+                  className="hidden"
+                />
+
+                {/* Lista miniaturek */}
+                {orderPhotos.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+                    {orderPhotos.map(photo => (
+                      <div key={photo.id} className="relative group">
+                        <img
+                          src={photo.dataUrl}
+                          alt={photo.label || 'Zdjęcie'}
+                          className="w-full h-20 object-cover border border-stone-300 cursor-pointer"
+                          onClick={() => setPreviewImage(photo.dataUrl)}
+                        />
+                        <button
+                          onClick={() => removeOrderPhoto(photo.id)}
+                          className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs"
+                          title="Usuń"
+                        >
+                          ×
+                        </button>
+                        <input
+                          type="text"
+                          value={photo.label}
+                          onChange={e => updateOrderPhotoLabel(photo.id, e.target.value)}
+                          placeholder="opis..."
+                          className="w-full mt-1 text-[10px] bg-orange-50 border border-stone-200 px-1 py-0.5 focus:outline-none focus:border-yellow-800"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs text-stone-500 italic text-center py-4 border border-dashed border-stone-300">
+                    Brak zdjęć — dodaj próbnik, tkaninę, rysunek...
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* PODSUMOWANIE - STAŁE NA DOLE */}
+      <footer className="bg-orange-100 text-stone-800 border-t-4 border-yellow-800 flex-shrink-0 shadow-2xl">
+        <div className="px-4 py-3 flex items-center gap-4 flex-wrap">
+          {/* Liczba pozycji */}
+          <div className="flex flex-col">
+            <div className="text-[9px] tracking-[0.3em] text-yellow-700 uppercase">Pozycji</div>
+            <div className="text-xl font-light">{positions.length}</div>
+            <div className="text-[9px] text-stone-500">
+              {positions.reduce((s, p) => s + p.qty, 0)} szt.
+            </div>
+          </div>
+
+          {/* Suma częściowa */}
+          <div className="flex flex-col border-l border-stone-300 pl-4">
+            <div className="text-[9px] tracking-[0.3em] text-stone-500 uppercase">Suma</div>
+            <div className="text-lg font-light">{fmt(subtotal)}</div>
+          </div>
+
+          {/* Rabat */}
+          <div className="flex flex-col border-l border-stone-300 pl-4">
+            <div className="text-[9px] tracking-[0.3em] text-stone-500 uppercase flex items-center gap-1">
+              <Percent size={9} /> Rabat
+            </div>
+            <div className="flex items-center gap-1 mt-0.5">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                value={discount}
+                onChange={e => setDiscount(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
+                className="w-12 bg-orange-50 border border-stone-300 px-1 py-0.5 text-right text-sm focus:outline-none focus:border-yellow-800"
+              />
+              <span className="text-xs text-stone-500">%</span>
+              {discount > 0 && (
+                <span className="text-yellow-700 text-[10px] ml-1">−{fmt(discountValue)}</span>
+              )}
+            </div>
+          </div>
+
+          {/* Do zapłaty */}
+          <div className="flex flex-col border-l border-stone-300 pl-4 ml-auto">
+            <div className="text-[9px] tracking-[0.3em] text-yellow-700 uppercase">Do zapłaty</div>
+            <div className="text-3xl font-light">{fmt(total)}</div>
+          </div>
+
+          {/* Akcje */}
+          <div className="flex gap-1 border-l border-stone-300 pl-4">
+            <button
+              onClick={() => setClientPanelOpen(true)}
+              className="bg-orange-50 hover:bg-stone-300 border border-stone-400 text-stone-800 px-3 py-2 text-[10px] tracking-wider uppercase flex items-center gap-1"
+              title={clientName || 'Wpisz dane klienta'}
+            >
+              <User size={12} />
+              <span className="hidden sm:inline">{clientName ? clientName.slice(0, 15) : 'Klient'}</span>
+            </button>
+            <button
+              onClick={handlePreviewHtml}
+              disabled={positions.length === 0}
+              className="bg-orange-50 hover:bg-orange-100 border border-stone-400 text-stone-800 px-3 py-2 text-[10px] tracking-wider uppercase flex items-center gap-1 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              👁 Podgląd
+            </button>
+            <button
+              onClick={handleSavePdf}
+              disabled={positions.length === 0}
+              className="bg-yellow-800 hover:bg-yellow-900 text-white px-3 py-2 text-[10px] tracking-wider uppercase flex items-center gap-1 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <Download size={12} />
+              PDF
+            </button>
+            <button
+              onClick={handleSendMail}
+              disabled={positions.length === 0}
+              className="bg-yellow-800 hover:bg-yellow-900 text-white px-3 py-2 text-[10px] tracking-wider uppercase flex items-center gap-1 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <Mail size={12} />
+              E-mail
+            </button>
+            {positions.length > 0 && (
+              <button
+                onClick={clearAll}
+                className="bg-orange-50 hover:bg-red-700 text-stone-500 hover:text-white px-2 py-2 text-[10px] tracking-wider uppercase border border-stone-300 hover:border-red-700"
+                title="Wyczyść wszystko"
+              >
+                <Trash2 size={12} />
+              </button>
+            )}
+          </div>
+        </div>
+      </footer>
+
+      {/* PANEL DANYCH KLIENTA */}
+      {clientPanelOpen && (
+        <div
+          className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+          onClick={() => setClientPanelOpen(false)}
+        >
+          <div
+            className="bg-white max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="bg-orange-100 text-stone-800 px-6 py-5 flex items-center justify-between border-b-4 border-yellow-800">
+              <div>
+                <div className="text-[10px] tracking-[0.4em] text-yellow-700">DANE KLIENTA</div>
+                <div className="text-xl font-light">Wycena nr {quoteNumber}</div>
+              </div>
+              <button onClick={() => setClientPanelOpen(false)} className="text-stone-500 hover:text-yellow-700">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4">
+              <div>
+                <label className="block text-[10px] tracking-wider uppercase text-stone-500 mb-1">Imię i nazwisko / firma</label>
+                <input
+                  type="text"
+                  value={clientName}
+                  onChange={e => setClientName(e.target.value)}
+                  placeholder="np. Jan Kowalski"
+                  className="w-full bg-stone-50 border-2 border-stone-300 px-4 py-3 text-base focus:outline-none focus:border-yellow-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] tracking-wider uppercase text-stone-500 mb-1">Telefon</label>
+                <input
+                  type="tel"
+                  value={clientPhone}
+                  onChange={e => setClientPhone(e.target.value)}
+                  placeholder="np. +48 123 456 789"
+                  className="w-full bg-stone-50 border-2 border-stone-300 px-4 py-3 text-base focus:outline-none focus:border-yellow-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] tracking-wider uppercase text-stone-500 mb-1">E-mail klienta</label>
+                <input
+                  type="email"
+                  value={clientEmail}
+                  onChange={e => setClientEmail(e.target.value)}
+                  placeholder="np. klient@example.com"
+                  className="w-full bg-stone-50 border-2 border-stone-300 px-4 py-3 text-base focus:outline-none focus:border-yellow-800"
+                />
+              </div>
+            </div>
+
+            <div className="border-t border-stone-200 p-4 flex justify-end gap-2 bg-stone-50">
+              <button
+                onClick={() => {
+                  setClientName(''); setClientPhone(''); setClientEmail('');
+                }}
+                className="px-4 py-2 text-stone-600 hover:text-red-700 tracking-wider uppercase text-xs"
+              >
+                Wyczyść
+              </button>
+              <button
+                onClick={() => setClientPanelOpen(false)}
+                className="bg-yellow-800 hover:bg-yellow-900 text-white px-6 py-2 tracking-wider uppercase text-sm"
+              >
+                Zapisz
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HISTORIA WYCEN */}
+      {historyPanelOpen && (
+        <div
+          className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+          onClick={() => setHistoryPanelOpen(false)}
+        >
+          <div
+            className="bg-white max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="bg-orange-100 text-stone-800 px-6 py-5 flex items-center justify-between border-b-4 border-yellow-800">
+              <div>
+                <div className="text-[10px] tracking-[0.4em] text-yellow-700">📋 HISTORIA WYCEN</div>
+                <div className="text-xl font-light">
+                  {savedQuotes.length === 0 ? 'Brak zapisanych wycen' :
+                   `${savedQuotes.length} ${savedQuotes.length === 1 ? 'zapisana wycena' : savedQuotes.length < 5 ? 'zapisane wyceny' : 'zapisanych wycen'}`}
+                </div>
+              </div>
+              <button onClick={() => setHistoryPanelOpen(false)} className="text-stone-600 hover:text-yellow-800">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              {savedQuotes.length === 0 ? (
+                <div className="text-center py-16 text-stone-500 italic">
+                  Brak zapisanych wycen.<br/>
+                  Kliknij "💾 Zapisz wycenę" w nagłówku, aby zapisać aktualną wycenę.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {savedQuotes.map(q => {
+                    const date = new Date(q.savedAt);
+                    const dateStr = date.toLocaleString('pl-PL', {
+                      day: '2-digit', month: '2-digit', year: 'numeric',
+                      hour: '2-digit', minute: '2-digit'
+                    });
+                    const fmtQ = (n) => `${(n || 0).toFixed(2).replace('.', ',')} ${q.currency || ''}`;
+
+                    return (
+                      <div key={q.id} className="bg-orange-50 border border-stone-200 p-4 flex items-center gap-4 flex-wrap">
+                        <div className="flex-1 min-w-[200px]">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <div className="bg-yellow-800 text-white px-2 py-0.5 text-[10px] tracking-wider uppercase">
+                              {q.categoryLabel}
+                            </div>
+                            <div className="font-medium text-stone-800">
+                              {q.clientName || '(bez klienta)'}
+                            </div>
+                          </div>
+                          <div className="text-[11px] text-stone-500 mt-1">
+                            Nr {q.quoteNumber} · {dateStr}
+                          </div>
+                          {q.clientPhone && (
+                            <div className="text-[11px] text-stone-500">📞 {q.clientPhone}</div>
+                          )}
+                          {q.clientEmail && (
+                            <div className="text-[11px] text-stone-500">✉ {q.clientEmail}</div>
+                          )}
+                        </div>
+
+                        <div className="text-right">
+                          <div className="text-[10px] tracking-wider uppercase text-stone-500">
+                            {q.positions.length} {q.positions.length === 1 ? 'pozycja' : 'pozycji'}
+                          </div>
+                          <div className="text-xl font-semibold text-stone-800">{fmtQ(q.total)}</div>
+                          {q.discount > 0 && (
+                            <div className="text-[10px] text-yellow-700">rabat {q.discount}%</div>
+                          )}
+                        </div>
+
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => loadQuoteFromHistory(q)}
+                            className="bg-yellow-800 hover:bg-yellow-900 text-white px-3 py-2 text-[10px] tracking-wider uppercase"
+                            title="Wczytaj wycenę"
+                          >
+                            Wczytaj
+                          </button>
+                          <button
+                            onClick={() => deleteQuoteFromHistory(q.id)}
+                            className="bg-stone-100 hover:bg-red-600 hover:text-white text-stone-500 p-2 transition-colors"
+                            title="Usuń z historii"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {savedQuotes.length > 0 && (
+              <div className="border-t border-stone-200 p-3 bg-stone-50 flex justify-end">
+                <button
+                  onClick={() => {
+                    if (confirm('Czy na pewno chcesz usunąć WSZYSTKIE zapisane wyceny? Tej akcji nie można cofnąć.')) {
+                      setSavedQuotes([]);
+                    }
+                  }}
+                  className="text-[10px] text-stone-500 hover:text-red-700 tracking-wider uppercase"
+                >
+                  Wyczyść całą historię
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* PODGLĄD HTML WYCENY */}
+      {htmlPreviewOpen && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-white max-w-5xl w-full max-h-[95vh] flex flex-col shadow-2xl">
+            <div className="bg-orange-100 text-stone-800 px-6 py-4 flex items-center justify-between border-b-4 border-yellow-800 flex-shrink-0">
+              <div>
+                <div className="text-[10px] tracking-[0.4em] text-yellow-700">PODGLĄD WYCENY</div>
+                <div className="text-xl font-light">Nr {quoteNumber}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleSavePdf}
+                  className="bg-yellow-800 hover:bg-yellow-900 text-white px-3 py-2 text-xs tracking-wider uppercase flex items-center gap-1"
+                >
+                  <Download size={12} /> Zapisz PDF
+                </button>
+                <button onClick={() => setHtmlPreviewOpen(false)} className="text-stone-600 hover:text-yellow-800">
+                  <X size={24} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden bg-stone-100">
+              <iframe
+                title="Podgląd wyceny"
+                srcDoc={htmlPreviewContent}
+                className="w-full h-full border-0 bg-white"
+                style={{ minHeight: '70vh' }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PANEL DIAGNOSTYCZNY ZDJĘĆ */}
+      {imageDebugOpen && (
+        <div
+          className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+          onClick={() => setImageDebugOpen(false)}
+        >
+          <div
+            className="bg-white max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="bg-orange-100 text-stone-800 px-6 py-5 flex items-center justify-between border-b-4 border-yellow-800">
+              <div>
+                <div className="text-[10px] tracking-[0.4em] text-yellow-700">DIAGNOSTYKA ZDJĘĆ</div>
+                <div className="text-xl font-light">Wczytano {Object.keys(images).length} zdjęć</div>
+              </div>
+              <button onClick={() => setImageDebugOpen(false)} className="text-stone-500 hover:text-yellow-700">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-5">
+              {/* Akcje */}
+              <div className="space-y-2">
+                <div className="text-[10px] tracking-wider uppercase text-stone-500">Wgraj zdjęcia</div>
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => imagesInputRef.current?.click()}
+                    className="bg-yellow-800 hover:bg-yellow-900 text-white px-4 py-3 text-sm tracking-wider uppercase flex items-center gap-2 flex-1 min-w-[200px] justify-center"
+                  >
+                    <FolderOpen size={16} />
+                    Wybierz pliki (JPG/PNG)
+                  </button>
+                  <button
+                    onClick={() => imagesFolderInputRef.current?.click()}
+                    className="bg-orange-50 hover:bg-stone-300 text-white px-4 py-3 text-sm tracking-wider uppercase flex items-center gap-2 flex-1 min-w-[200px] justify-center"
+                  >
+                    <FolderOpen size={16} />
+                    Wybierz cały folder
+                  </button>
+                </div>
+                <div className="text-xs text-stone-500 italic">
+                  Na iPadzie/iPhonie zawsze używaj <strong>"Wybierz pliki"</strong>. "Folder" działa tylko w Chrome/Edge na komputerze.
+                </div>
+                {Object.keys(images).length > 0 && (
+                  <button
+                    onClick={() => { setImages({}); }}
+                    className="bg-orange-100 hover:bg-red-600 hover:text-white text-stone-700 px-4 py-2 text-xs tracking-wider uppercase mt-2"
+                  >
+                    Wyczyść wszystkie wgrane zdjęcia
+                  </button>
+                )}
+              </div>
+
+              {/* Lista UNIKALNYCH elementów z Excela vs zdjęcia */}
+              <div>
+                <div className="text-sm font-medium text-stone-800 mb-2">Dopasowanie do elementów z Excela:</div>
+                <div className="text-xs text-stone-500 mb-2 italic">
+                  Jeden element = jedno zdjęcie. Element występujący w wielu kolekcjach pokazany jest raz.
+                </div>
+                <div className="border border-stone-200 max-h-96 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-orange-50 text-xs uppercase tracking-wider text-stone-600 sticky top-0">
+                      <tr>
+                        <th className="text-left py-2 px-3">Element</th>
+                        <th className="text-left py-2 px-3">Kolekcje</th>
+                        <th className="text-center py-2 px-3">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(() => {
+                        // Zbieramy unikalne elementy (po znormalizowanej nazwie)
+                        // i listujemy w których kolekcjach występują
+                        const unique = {};
+                        collections.forEach(col => {
+                          col.elements.forEach(el => {
+                            const key = normalizeKey(el.name);
+                            if (!unique[key]) {
+                              unique[key] = { name: el.name, collections: [] };
+                            }
+                            if (!unique[key].collections.includes(col.name)) {
+                              unique[key].collections.push(col.name);
+                            }
+                          });
+                        });
+                        const list = Object.values(unique).sort((a, b) => a.name.localeCompare(b.name));
+                        return list.map((item, i) => {
+                          const found = getImage(item.name);
+                          return (
+                            <tr key={i} className="border-t border-stone-200">
+                              <td className="py-2 px-3 text-stone-700 font-medium">{item.name}</td>
+                              <td className="py-2 px-3 text-stone-500 text-xs">
+                                {item.collections.join(', ')}
+                              </td>
+                              <td className="py-2 px-3 text-center">
+                                {found ? (
+                                  <span className="inline-flex items-center gap-1 text-green-700 text-xs">
+                                    <Check size={14} /> Znaleziono
+                                  </span>
+                                ) : (
+                                  <span className="text-stone-500 text-xs">Brak zdjęcia</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Lista wgranych plików */}
+              <div>
+                <div className="text-sm font-medium text-stone-800 mb-2">Wgrane pliki (po normalizacji nazw):</div>
+                <div className="bg-stone-50 border border-stone-200 p-3 max-h-48 overflow-y-auto">
+                  {Object.keys(images).length === 0 ? (
+                    <div className="text-stone-500 italic text-sm">Brak wgranych zdjęć</div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs font-mono text-stone-700">
+                      {Object.keys(images).sort().map(k => (
+                        <div key={k} className="truncate">{k}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-orange-50 border-l-4 border-yellow-800 p-3 text-sm text-stone-700">
+                <strong>Wskazówka:</strong> Nazwa pliku JPG/PNG musi pasować do nazwy elementu z Excela (bez rozszerzenia).
+                Aplikacja ignoruje wielkość liter, polskie znaki (ą→a, ł→l), myślniki, kropki i podwójne spacje.
+                Np. plik <span className="font-mono bg-white px-1">moduł 1-osobowy.jpg</span> dopasuje się do elementu <span className="font-mono bg-white px-1">Moduł 1-osobowy</span> lub <span className="font-mono bg-white px-1">modul 1 osobowy</span>.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DODAWANIA POZYCJI */}
+      {modalOpen && selectedCollection && (
+        <div
+          className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+          onClick={() => setModalOpen(false)}
+        >
+          <div
+            className="bg-white max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header modal */}
+            <div className="bg-orange-100 text-stone-800 px-6 py-5 flex items-center justify-between border-b-4 border-yellow-800">
+              <div>
+                <div className="text-[10px] tracking-[0.4em] text-yellow-700">NOWA POZYCJA</div>
+                <div className="text-xl font-light">Kolekcja: {selectedCollection.name}</div>
+              </div>
+              <button onClick={() => setModalOpen(false)} className="text-stone-500 hover:text-yellow-700">
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Treść modalu */}
+            <div className="p-6 overflow-y-auto space-y-5">
+              {/* Wybór elementu */}
+              <div>
+                <div className="text-[10px] tracking-wider uppercase text-stone-500 mb-2">Wybierz element</div>
+                <div className="grid grid-cols-1 gap-2 max-h-72 overflow-y-auto">
+                  {selectedCollection.elements.map(el => {
+                    const img = getImage(el.name);
+                    const isSelected = modalElement === el.name;
+                    return (
+                      <button
+                        key={el.name}
+                        onClick={() => setModalElement(el.name)}
+                        className={`flex items-center gap-3 p-3 border-2 text-left transition-all ${
+                          isSelected
+                            ? 'border-yellow-800 bg-orange-50'
+                            : 'border-stone-200 hover:border-stone-400 bg-white'
+                        }`}
+                      >
+                        <div className="w-14 h-14 bg-orange-50 border border-stone-200 flex items-center justify-center flex-shrink-0">
+                          {img ? (
+                            <img src={img} alt={el.name} className="w-full h-full object-contain p-1" />
+                          ) : (
+                            <ImageIcon size={20} className="text-stone-500" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-stone-800 truncate">{el.name}</div>
+                        </div>
+                        {isSelected && <Check size={18} className="text-yellow-800 flex-shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Wybór grupy */}
+              {modalElement && (() => {
+                const el = selectedCollection.elements.find(e => e.name === modalElement);
+                return (
+                  <div>
+                    <div className="text-[10px] tracking-wider uppercase text-stone-500 mb-2">Wybierz grupę cenową</div>
+                    <div className="grid grid-cols-1 gap-2">
+                      {priceGroups.map(g => {
+                        const price = el?.prices[g] || 0;
+                        const disabled = price === 0;
+                        const isSelected = modalGroup === g;
+                        return (
+                          <button
+                            key={g}
+                            disabled={disabled}
+                            onClick={() => setModalGroup(g)}
+                            className={`p-4 border-2 transition-all flex items-center justify-between ${
+                              disabled
+                                ? 'border-stone-200 text-stone-500 cursor-not-allowed bg-stone-50'
+                                : isSelected
+                                ? 'border-yellow-800 bg-yellow-800 text-white'
+                                : 'border-stone-200 hover:border-stone-400 bg-white text-stone-700'
+                            }`}
+                          >
+                            <div className="text-base tracking-wider uppercase font-bold">{g}</div>
+                            <div className="text-xl font-light">{disabled ? '—' : fmt(price)}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Footer modal */}
+            <div className="border-t border-stone-200 p-4 flex justify-between items-center bg-stone-50">
+              <button
+                onClick={() => setModalOpen(false)}
+                className="px-5 py-3 text-stone-600 hover:text-stone-800 tracking-wider uppercase text-sm"
+              >
+                Anuluj
+              </button>
+              <button
+                onClick={confirmAdd}
+                disabled={!modalElement || !modalGroup}
+                className={`px-8 py-3 tracking-wider uppercase text-sm flex items-center gap-2 transition-all ${
+                  modalElement && modalGroup
+                    ? 'bg-yellow-800 hover:bg-yellow-900 text-white'
+                    : 'bg-orange-100 text-stone-500 cursor-not-allowed'
+                }`}
+              >
+                <Plus size={16} />
+                Dodaj do wyceny
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PODGLĄD ZDJĘCIA */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-8"
+          onClick={() => setPreviewImage(null)}
+        >
+          <button className="absolute top-6 right-6 text-white hover:text-yellow-700">
+            <X size={32} />
+          </button>
+          <img src={previewImage} alt="Podgląd" className="max-w-full max-h-full object-contain" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(ShowroomQuoteApp));
+</script>
+</body>
+</html>
