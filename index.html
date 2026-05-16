@@ -1089,6 +1089,7 @@ function ShowroomQuoteApp() {
       return;
     }
 
+    // Przygotuj treść maila
     const dateStr = new Date().toLocaleDateString('pl-PL');
     let body = `Wycena nr ${quoteNumber}\n`;
     body += `Data: ${dateStr}\n`;
@@ -1111,14 +1112,64 @@ function ShowroomQuoteApp() {
     body += `DO ZAPŁATY: ${fmt(total)}\n`;
     if (orderNotes) body += `\nUwagi do zamówienia: ${orderNotes}\n`;
     if (orderPhotos.length > 0) {
-      body += `\nDołączono ${orderPhotos.length} ${orderPhotos.length === 1 ? 'zdjęcie' : 'zdjęć'} do zamówienia (zapisz wycenę jako PDF aby zobaczyć).`;
+      body += `\nDołączono ${orderPhotos.length} ${orderPhotos.length === 1 ? 'zdjęcie' : 'zdjęć'} do zamówienia (w załączonym PDF).`;
       const labeled = orderPhotos.filter(p => p.label).map(p => `- ${p.label}`).join('\n');
       if (labeled) body += `\nOpisy zdjęć:\n${labeled}\n`;
     }
+    body += `\n\nUWAGA: Pamiętaj o załączeniu pobranego pliku PDF do tego maila.`;
 
     const subject = `Wycena ${quoteNumber}${clientName ? ' — ' + clientName : ''}`;
     const mailto = `mailto:info@beatris.eu?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.location.href = mailto;
+
+    // KROK 1: Pokaż instrukcję
+    const ok = confirm(
+      `WYSYŁANIE WYCENY MAILEM — 2 KROKI:\n\n` +
+      `KROK 1: Po kliknięciu OK otworzy się okno wydruku PDF.\n` +
+      `   → Wybierz "Zapisz jako PDF" lub "Microsoft Print to PDF"\n` +
+      `   → Zapisz plik (np. na Pulpicie)\n\n` +
+      `KROK 2: Po zamknięciu okna wydruku otworzy się aplikacja mailowa.\n` +
+      `   → Załącz zapisany plik PDF do maila\n` +
+      `   → Kliknij "Wyślij"\n\n` +
+      `Kontynuować?`
+    );
+    if (!ok) return;
+
+    // KROK 2: Generuj PDF (otwórz okno wydruku)
+    const html = generatePdfHtml();
+    const oldIframe = document.getElementById('pdf-print-iframe');
+    if (oldIframe) oldIframe.remove();
+
+    const iframe = document.createElement('iframe');
+    iframe.id = 'pdf-print-iframe';
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    iframe.onload = () => {
+      setTimeout(() => {
+        try {
+          iframe.contentWindow.focus();
+          iframe.contentWindow.print();
+          // KROK 3: Po wydruku - otwórz klient pocztowy
+          // Czekamy ~2 sekundy żeby okno wydruku zdążyło się pojawić
+          setTimeout(() => {
+            window.location.href = mailto;
+          }, 2000);
+        } catch (e) {
+          // Jeśli druk nie poszedł, i tak otwórz mail
+          window.location.href = mailto;
+        }
+      }, 600);
+    };
   };
 
   // ---- PODSUMOWANIE ----
