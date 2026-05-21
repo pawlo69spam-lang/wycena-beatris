@@ -165,8 +165,15 @@ function ShowroomQuoteApp() {
     { id: 'ZREALIZOWANA', label: 'ZREALIZOWANA', bg: 'bg-green-700', text: 'text-white' },
     { id: 'ANULOWANA', label: 'ANULOWANA', bg: 'bg-red-700', text: 'text-white' },
   ];
+  // Panel zarządzania cennikami (dostępny z menu głównego)
+  const [excelManagerOpen, setExcelManagerOpen] = useState(false);
+  // Panel zarządzania tkaninami (dostępny z menu głównego)
+  const [fabricsManagerOpen, setFabricsManagerOpen] = useState(false);
+
   // Aktywna kategoria
   const [activeCategory, setActiveCategory] = useState('indywidualni');
+  // Aktywny ekran: 'menu' (główne menu) lub 'quote' (tworzenie wyceny)
+  const [activeScreen, setActiveScreen] = useState('menu');
   // Dane per kategoria: { [catId]: { collections, priceGroups, fileName } }
   const [catalogs, setCatalogs] = useState({
     indywidualni: { collections: [], priceGroups: [], fileName: '' },
@@ -175,6 +182,12 @@ function ShowroomQuoteApp() {
   });
   // Zdjęcia są WSPÓLNE dla wszystkich kategorii (te same elementy w różnych cennikach)
   const [images, setImagesState] = useState({});
+
+  // KATALOG TKANIN - wspólny dla wszystkich kategorii
+  // Struktura: { dostawca: [kolekcja1, kolekcja2, ...] }
+  const [fabrics, setFabrics] = useState({});
+  const [fabricsFileName, setFabricsFileName] = useState('');
+  const fabricsInputRef = useRef(null);
 
   // Skróty do aktywnej kategorii
   const activeCatalog = catalogs[activeCategory] || { collections: [], priceGroups: [], fileName: '' };
@@ -229,6 +242,11 @@ function ShowroomQuoteApp() {
         if (savedHistory && Array.isArray(savedHistory)) {
           setSavedQuotes(savedHistory);
         }
+        const savedFabrics = await dbGet('fabrics');
+        if (savedFabrics) {
+          setFabrics(savedFabrics.data || {});
+          setFabricsFileName(savedFabrics.fileName || '');
+        }
       } catch (err) {
         console.error('Błąd wczytywania danych:', err);
       } finally {
@@ -274,6 +292,18 @@ function ShowroomQuoteApp() {
       }
     })();
   }, [images, isLoading]);
+
+  // Automatyczny zapis tkanin
+  useEffect(() => {
+    if (isLoading) return;
+    (async () => {
+      try {
+        await dbSet('fabrics', { data: fabrics, fileName: fabricsFileName });
+      } catch (err) {
+        console.error('Błąd zapisu tkanin:', err);
+      }
+    })();
+  }, [fabrics, fabricsFileName, isLoading]);
 
   // Automatyczny zapis historii wycen
   useEffect(() => {
@@ -367,6 +397,64 @@ function ShowroomQuoteApp() {
     }
     if (!confirm(`Usunąć użytkownika "${username}"?`)) return;
     setUsers(users.filter(u => u.username !== username));
+  };
+
+  // Edycja użytkownika (login, hasło, uprawnienia)
+  const [editingUser, setEditingUser] = useState(null); // username który edytujemy
+  const [editUsername, setEditUsername] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [editIsAdmin, setEditIsAdmin] = useState(false);
+
+  const startEditUser = (user) => {
+    setEditingUser(user.username);
+    setEditUsername(user.username);
+    setEditPassword(user.password);
+    setEditIsAdmin(user.isAdmin || false);
+  };
+
+  const cancelEditUser = () => {
+    setEditingUser(null);
+    setEditUsername('');
+    setEditPassword('');
+    setEditIsAdmin(false);
+  };
+
+  const saveEditUser = () => {
+    const newUname = editUsername.trim();
+    if (!newUname || !editPassword) {
+      alert('Podaj nazwę użytkownika i hasło.');
+      return;
+    }
+    // Sprawdź czy nowa nazwa nie koliduje z innym użytkownikiem
+    if (newUname !== editingUser && users.some(u => u.username.toLowerCase() === newUname.toLowerCase())) {
+      alert('Użytkownik o tej nazwie już istnieje.');
+      return;
+    }
+    // BEATRIS: nie można zmienić loginu ani odebrać uprawnień admina
+    if (editingUser === 'BEATRIS') {
+      if (newUname !== 'BEATRIS') {
+        alert('Nie można zmienić nazwy głównego admina BEATRIS.');
+        return;
+      }
+      if (!editIsAdmin) {
+        alert('Nie można odebrać uprawnień administratora głównemu adminowi BEATRIS.');
+        return;
+      }
+    }
+
+    // Aktualizuj listę użytkowników
+    setUsers(prev => prev.map(u => u.username === editingUser
+      ? { username: newUname, password: editPassword, isAdmin: editIsAdmin }
+      : u
+    ));
+
+    // Jeśli to my sami zmieniliśmy swoje dane - zaktualizuj currentUser
+    if (currentUser?.username === editingUser) {
+      setCurrentUser({ username: newUname, password: editPassword, isAdmin: editIsAdmin });
+    }
+
+    cancelEditUser();
+    alert('Zapisano zmiany.');
   };
 
   // ---- HISTORIA WYCEN ----
@@ -560,15 +648,22 @@ function ShowroomQuoteApp() {
     const positionsRows = [];
     savedQuotes.forEach(q => {
       (q.positions || []).forEach((p, idx) => {
+        const f = p.fabric || {};
+        const fabricParts = [f.supplier, f.collection, f.color].filter(Boolean);
+        const fabricText = fabricParts.join(' / ');
         positionsRows.push({
           'Nr wyceny': q.quoteNumber || '',
           'Klient': q.clientName || '',
           'Status': q.status || 'UTWORZONA',
           'Kategoria': q.categoryLabel || '',
           'Lp.': idx + 1,
-          'Kolekcja': p.collection || '',
+          'Kolekcja modułu': p.collection || '',
           'Element': p.elementName || '',
           'Grupa cenowa': p.group || '',
+          'Dostawca tkaniny': f.supplier || '',
+          'Kolekcja tkaniny': f.collection || '',
+          'Kolor': f.color || '',
+          'Tkanina (pełna)': fabricText,
           'Cena jedn.': p.price || 0,
           'Ilość': p.qty || 0,
           'Wartość': (p.price || 0) * (p.qty || 0),
@@ -681,6 +776,69 @@ function ShowroomQuoteApp() {
     () => collections.find(c => c.name === selectedCollectionName) || null,
     [collections, selectedCollectionName]
   );
+
+  // ---- WCZYTYWANIE EXCELA TKANIN ----
+  // Format: kolumna 1 = Dostawca, kolumna 2 = Kolekcja
+  // Bez wiersza nagłówka (jak na screenie)
+  const handleFabricsUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = window.XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+        if (rows.length === 0) {
+          alert('Plik z tkaninami jest pusty.');
+          return;
+        }
+
+        const newFabrics = {};
+        // Wczytujemy WSZYSTKIE wiersze (nie pomijamy nagłówka - na screenie nie ma nagłówka)
+        // Ale jeśli pierwszy wiersz wygląda na nagłówek, pomijamy
+        let startIdx = 0;
+        const firstRow = rows[0];
+        const first0 = String(firstRow[0] || '').trim().toLowerCase();
+        const first1 = String(firstRow[1] || '').trim().toLowerCase();
+        if (first0 === 'dostawca' || first0 === 'producent' || first1 === 'kolekcja' || first1 === 'tkanina') {
+          startIdx = 1;
+        }
+
+        for (let i = startIdx; i < rows.length; i++) {
+          const row = rows[i];
+          const supplier = String(row[0] || '').trim();
+          const collection = String(row[1] || '').trim();
+          if (!supplier || !collection) continue;
+
+          if (!newFabrics[supplier]) newFabrics[supplier] = [];
+          if (!newFabrics[supplier].includes(collection)) {
+            newFabrics[supplier].push(collection);
+          }
+        }
+
+        // Sortuj kolekcje alfabetycznie
+        Object.keys(newFabrics).forEach(s => newFabrics[s].sort());
+
+        setFabrics(newFabrics);
+        setFabricsFileName(file.name);
+
+        const suppliers = Object.keys(newFabrics).length;
+        let totalCollections = 0;
+        Object.values(newFabrics).forEach(c => totalCollections += c.length);
+
+        alert(`✅ Wczytano katalog tkanin:\n• ${suppliers} dostawców\n• ${totalCollections} kolekcji`);
+      } catch (err) {
+        alert('Błąd wczytywania pliku Excel z tkaninami: ' + err.message);
+      }
+    };
+    reader.onerror = () => alert('Błąd wczytywania pliku.');
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
+  };
 
   // ---- WCZYTYWANIE EXCELA ----
   const handleExcelUpload = (e) => {
@@ -817,6 +975,7 @@ function ShowroomQuoteApp() {
       group: modalGroup,
       price,
       qty: 1,
+      fabric: { supplier: '', collection: '', color: '', manualMode: false },
     }]);
     setModalOpen(false);
   };
@@ -838,6 +997,25 @@ function ShowroomQuoteApp() {
   };
 
   const removePosition = (id) => setPositions(positions.filter(p => p.id !== id));
+
+  // Zmiana tkaniny dla pozycji
+  // key: 'supplier', 'collection', 'color', 'manualMode'
+  const updatePositionFabric = (id, key, value) => {
+    setPositions(positions.map(p => {
+      if (p.id !== id) return p;
+      const newFabric = { ...(p.fabric || { supplier: '', collection: '', color: '', manualMode: false }), [key]: value };
+      // Jeśli zmieniono dostawcę z listy - zresetuj kolekcję (bo nowy dostawca ma inne kolekcje)
+      if (key === 'supplier' && !newFabric.manualMode) {
+        newFabric.collection = '';
+      }
+      // Przełączenie na tryb ręczny - wyczyść wszystko
+      if (key === 'manualMode' && value === true) {
+        newFabric.supplier = '';
+        newFabric.collection = '';
+      }
+      return { ...p, fabric: newFabric };
+    }));
+  };
   const clearAll = () => {
     setPositions([]);
     setOrderNotes('');
@@ -894,6 +1072,10 @@ function ShowroomQuoteApp() {
 
     const positionRows = positions.map((pos, idx) => {
       const img = getImage(pos.elementName);
+      // Format tkaniny: "Dostawca / Kolekcja / Kolor"
+      const f = pos.fabric || {};
+      const fabricParts = [f.supplier, f.collection, f.color].filter(Boolean);
+      const fabricText = fabricParts.join(' / ');
       return `
         <tr>
           <td style="text-align:center;font-weight:600;color:#92400e;">${idx + 1}</td>
@@ -903,6 +1085,7 @@ function ShowroomQuoteApp() {
           <td>
             <div style="font-weight:600;">${pos.elementName}</div>
             <div style="font-size:11px;color:#857461;text-transform:uppercase;letter-spacing:1px;">${pos.collection}</div>
+            ${fabricText ? `<div style="font-size:11px;color:#a16207;margin-top:3px;">🧵 ${fabricText}</div>` : ''}
           </td>
           <td style="text-align:center;">${pos.group}</td>
           <td style="text-align:center;">${pos.qty}</td>
@@ -912,12 +1095,17 @@ function ShowroomQuoteApp() {
       `;
     }).join('');
 
+    // Sanityzuj numer wyceny dla nazwy pliku (zamień / na -)
+    const safeQuoteNumber = String(quoteNumber || 'wycena').replace(/[\/\\:*?"<>|]/g, '-');
+    const safeClientName = clientName ? '-' + clientName.replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, '_').slice(0, 30) : '';
+    const pdfFilename = `${safeQuoteNumber}${safeClientName}`;
+
     return `
 <!DOCTYPE html>
 <html lang="pl">
 <head>
 <meta charset="UTF-8">
-<title>Wycena ${quoteNumber}</title>
+<title>${pdfFilename}</title>
 <style>
   @page { size: A4; margin: 1.5cm; }
   * { box-sizing: border-box; }
@@ -1030,6 +1218,34 @@ function ShowroomQuoteApp() {
     `;
   };
 
+  // Pomocnicza: czeka aż wszystkie obrazki w dokumencie iframe się załadują
+  const waitForImagesToLoad = (doc) => {
+    return new Promise((resolve) => {
+      const images = doc.images;
+      if (!images || images.length === 0) {
+        resolve();
+        return;
+      }
+      let loaded = 0;
+      const total = images.length;
+      const checkDone = () => {
+        loaded++;
+        if (loaded >= total) resolve();
+      };
+      for (let i = 0; i < total; i++) {
+        const img = images[i];
+        if (img.complete && img.naturalHeight !== 0) {
+          checkDone();
+        } else {
+          img.onload = checkDone;
+          img.onerror = checkDone; // też kontynuujemy nawet jeśli obraz się nie załaduje
+        }
+      }
+      // Awaryjny timeout - max 5 sekund na obrazki
+      setTimeout(resolve, 5000);
+    });
+  };
+
   const handleSavePdf = () => {
     if (positions.length === 0) {
       alert('Brak pozycji w wycenie. Dodaj najpierw pozycje.');
@@ -1057,16 +1273,27 @@ function ShowroomQuoteApp() {
     doc.write(html);
     doc.close();
 
-    // Poczekaj aż obrazki się załadują, potem drukuj
-    iframe.onload = () => {
+    // Poczekaj aż wszystkie obrazki się załadują, potem drukuj
+    iframe.onload = async () => {
+      await waitForImagesToLoad(doc);
+      // Dodatkowy bufor na renderowanie
       setTimeout(() => {
         try {
+          // Zmień tytuł głównego dokumentu - przeglądarki używają go jako sugerowanej nazwy pliku PDF
+          const safeQuoteNumber = String(quoteNumber || 'wycena').replace(/[\/\\:*?"<>|]/g, '-');
+          const safeClientName = clientName ? '-' + clientName.replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, '_').slice(0, 30) : '';
+          const originalTitle = document.title;
+          document.title = `${safeQuoteNumber}${safeClientName}`;
+
           iframe.contentWindow.focus();
           iframe.contentWindow.print();
+
+          // Przywróć oryginalny tytuł po krótkiej chwili (po otwarciu okna wydruku)
+          setTimeout(() => { document.title = originalTitle; }, 1000);
         } catch (e) {
           alert('Nie udało się otworzyć okna wydruku. Spróbuj ponownie.');
         }
-      }, 600);
+      }, 300);
     };
   };
 
@@ -1103,7 +1330,12 @@ function ShowroomQuoteApp() {
 
     positions.forEach((pos, idx) => {
       body += `${idx + 1}. ${pos.elementName} (${pos.collection})\n`;
-      body += `   Grupa: ${pos.group} · Ilość: ${pos.qty} · ${fmt(pos.price)} = ${fmt(pos.price * pos.qty)}\n\n`;
+      body += `   Grupa: ${pos.group} · Ilość: ${pos.qty} · ${fmt(pos.price)} = ${fmt(pos.price * pos.qty)}\n`;
+      const f = pos.fabric || {};
+      const fabricParts = [f.supplier, f.collection, f.color].filter(Boolean);
+      const fabricText = fabricParts.join(' / ');
+      if (fabricText) body += `   Tkanina: ${fabricText}\n`;
+      body += `\n`;
     });
 
     body += `--- PODSUMOWANIE ---\n`;
@@ -1154,11 +1386,22 @@ function ShowroomQuoteApp() {
     doc.write(html);
     doc.close();
 
-    iframe.onload = () => {
+    iframe.onload = async () => {
+      await waitForImagesToLoad(doc);
       setTimeout(() => {
         try {
+          // Zmień tytuł głównego dokumentu - przeglądarki używają go jako sugerowanej nazwy pliku PDF
+          const safeQuoteNumber = String(quoteNumber || 'wycena').replace(/[\/\\:*?"<>|]/g, '-');
+          const safeClientName = clientName ? '-' + clientName.replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, '_').slice(0, 30) : '';
+          const originalTitle = document.title;
+          document.title = `${safeQuoteNumber}${safeClientName}`;
+
           iframe.contentWindow.focus();
           iframe.contentWindow.print();
+
+          // Przywróć tytuł
+          setTimeout(() => { document.title = originalTitle; }, 1000);
+
           // KROK 3: Po wydruku - otwórz klient pocztowy
           // Czekamy ~2 sekundy żeby okno wydruku zdążyło się pojawić
           setTimeout(() => {
@@ -1168,7 +1411,7 @@ function ShowroomQuoteApp() {
           // Jeśli druk nie poszedł, i tak otwórz mail
           window.location.href = mailto;
         }
-      }, 600);
+      }, 300);
     };
   };
 
@@ -1258,83 +1501,202 @@ function ShowroomQuoteApp() {
     );
   }
 
-  if (collections.length === 0) {
+  if (collections.length === 0 && activeScreen === 'quote') {
     return (
       <div className="min-h-screen bg-orange-50 flex flex-col items-center justify-center p-6" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}>
-        {/* Zakładki kategorii na ekranie startowym */}
-        <div className="max-w-2xl w-full mb-4 flex gap-1">
-          {CATEGORIES.map(cat => (
-            <button
-              key={cat.id}
-              onClick={() => handleCategoryChange(cat.id)}
-              className={`flex-1 px-4 py-3 text-xs tracking-wider uppercase transition-all border-b-4 ${
-                activeCategory === cat.id
-                  ? 'bg-orange-100 text-stone-800 border-yellow-800 font-bold'
-                  : 'bg-stone-200 text-stone-500 border-transparent hover:bg-orange-100'
-              }`}
-            >
-              {cat.label}
-              {catalogs[cat.id].collections.length > 0 && (
-                <span className="ml-2 text-yellow-700">✓</span>
-              )}
-            </button>
-          ))}
-        </div>
-        <div className="max-w-2xl w-full bg-white shadow-2xl border border-stone-300">
-          <div className="bg-orange-100 text-stone-800 px-10 py-8 border-b-4 border-yellow-800">
-            <div className="text-xs tracking-[0.4em] text-yellow-700 mb-2">
-              SHOWROOM · WYCENY · {CATEGORIES.find(c => c.id === activeCategory)?.label}
-            </div>
-            <h1 className="text-5xl font-light tracking-tight">Konfigurator</h1>
-            <div className="text-stone-500 mt-2 italic">
-              Wgraj cennik dla kategorii: <strong>{CATEGORIES.find(c => c.id === activeCategory)?.label}</strong> ({CATEGORIES.find(c => c.id === activeCategory)?.currency})
-            </div>
+        <div className="max-w-md w-full bg-white shadow-2xl border border-stone-300 p-8 text-center">
+          <div className="text-5xl mb-4">⚠</div>
+          <h2 className="text-2xl font-light text-stone-800 mb-2">Brak cennika</h2>
+          <div className="text-stone-500 mb-6">
+            Dla kategorii <strong>{CATEGORIES.find(c => c.id === activeCategory)?.label}</strong> nie ma jeszcze wgranego cennika.
           </div>
-
-          <div className="p-10 space-y-6">
-            <div>
-              <div className="text-sm tracking-wider uppercase text-stone-500 mb-3">Krok 1 · Wymagane</div>
-              <button
-                onClick={() => excelInputRef.current?.click()}
-                className="w-full bg-yellow-800 hover:bg-yellow-900 text-white px-6 py-5 flex items-center justify-center gap-3 transition-colors"
-              >
-                <FileSpreadsheet size={24} />
-                <span className="text-xl tracking-wide">Wczytaj plik Excel z cennikiem</span>
-              </button>
-              <input ref={excelInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleExcelUpload} className="hidden" />
-            </div>
-
-            <div>
-              <div className="text-sm tracking-wider uppercase text-stone-500 mb-3">Krok 2 · Opcjonalne</div>
-              <button
-                onClick={() => imagesInputRef.current?.click()}
-                className="w-full bg-orange-100 hover:bg-stone-300 text-stone-700 px-6 py-4 flex items-center justify-center gap-3 transition-colors border border-stone-300"
-              >
-                <FolderOpen size={20} />
-                <span className="tracking-wide">Wskaż folder z rysunkami / zdjęciami</span>
-              </button>
-              <input ref={imagesInputRef} type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp" multiple onChange={handleImagesUpload} className="hidden" />
-              <input ref={imagesFolderInputRef} type="file" accept="image/*" multiple webkitdirectory="" directory="" onChange={handleImagesUpload} className="hidden" />
-              <div className="text-xs text-stone-500 mt-2 italic">
-                Nazwa pliku musi odpowiadać nazwie modułu z Excela (np. <span className="font-mono">narożnik_lewy.jpg</span>)
-              </div>
-            </div>
-          </div>
+          <button
+            onClick={() => setActiveScreen('menu')}
+            className="bg-yellow-800 hover:bg-yellow-900 text-white px-6 py-3 text-sm tracking-wider uppercase"
+          >
+            ← Powrót do menu
+          </button>
         </div>
       </div>
     );
   }
 
   // ---- GŁÓWNY WIDOK ----
+  // Jeśli jesteśmy w widoku menu, renderujemy menu zamiast widoku wyceny.
+  // Modale (historia, użytkownicy, zdjęcia, cenniki) są wspólne dla obu widoków.
+
+  const enterQuoteForCategory = (catId) => {
+    setActiveCategory(catId);
+    resetCurrentQuote(true);
+    setActiveScreen('quote');
+  };
+
+  // Widok menu głównego
+  const menuView = (
+    <div className="min-h-screen bg-orange-50 p-6 overflow-y-auto" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}>
+      {/* NAGŁÓWEK Z UŻYTKOWNIKIEM */}
+      <div className="max-w-5xl mx-auto mb-8">
+        <div className="flex items-center justify-between bg-orange-100 px-6 py-4 border-b-4 border-yellow-800 shadow">
+          <div>
+            <div className="text-[10px] tracking-[0.4em] text-yellow-700">SHOWROOM · BEATRIS</div>
+            <h1 className="text-3xl font-light tracking-tight text-stone-800">Menu główne</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="bg-yellow-800 text-white px-3 py-2 text-xs tracking-wider uppercase flex items-center gap-2 shadow">
+              <User size={14} />
+              <div className="flex flex-col leading-tight">
+                <span className="text-[8px] opacity-80">Zalogowany</span>
+                <span className="font-bold text-sm">
+                  {currentUser?.username}
+                  {currentUser?.isAdmin && <span className="text-yellow-200 ml-1">★</span>}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="bg-orange-50 hover:bg-red-600 hover:text-white text-stone-700 border border-stone-300 hover:border-red-600 px-3 py-2 text-[10px] tracking-wider uppercase"
+            >
+              Wyloguj
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* SEKCJA: WYCENA */}
+      <div className="max-w-5xl mx-auto mb-8">
+        <div className="text-[10px] tracking-[0.3em] text-yellow-700 uppercase mb-3 px-2">Nowa wycena</div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {CATEGORIES.map(cat => {
+            const hasData = catalogs[cat.id]?.collections.length > 0;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => {
+                  if (!hasData) {
+                    alert(`Najpierw wgraj cennik dla kategorii "${cat.label}" w sekcji "Cenniki" poniżej.`);
+                    return;
+                  }
+                  enterQuoteForCategory(cat.id);
+                }}
+                className={`bg-white border-2 ${hasData ? 'border-yellow-800 hover:bg-yellow-800 hover:text-white' : 'border-stone-300 opacity-60'} shadow-md hover:shadow-xl transition-all p-6 text-left group`}
+              >
+                <div className="text-3xl mb-2">{cat.id === 'indywidualni' ? '🛋️' : cat.id === 'b2b_pln' ? '🏢' : '🌍'}</div>
+                <div className="text-[10px] tracking-[0.3em] uppercase opacity-70 mb-1">Wycena</div>
+                <div className="text-xl font-medium">{cat.label}</div>
+                <div className="text-[11px] mt-2 opacity-70">
+                  {hasData ? `${catalogs[cat.id].collections.length} kolekcji · waluta ${cat.currency}` : `⚠ Brak cennika`}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* SEKCJA: NARZĘDZIA */}
+      <div className="max-w-5xl mx-auto mb-8">
+        <div className="text-[10px] tracking-[0.3em] text-yellow-700 uppercase mb-3 px-2">Narzędzia</div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <button
+            onClick={() => setHistoryPanelOpen(true)}
+            className="bg-white border border-stone-300 hover:border-yellow-800 hover:bg-orange-100 shadow-md hover:shadow-xl transition-all p-4 text-left"
+          >
+            <div className="text-2xl mb-2">📋</div>
+            <div className="text-[10px] tracking-[0.3em] uppercase opacity-70 mb-1">Przeglądaj</div>
+            <div className="text-base font-medium text-stone-800">Historia ofert</div>
+            <div className="text-[11px] text-stone-500 mt-1">{savedQuotes.length} {savedQuotes.length === 1 ? 'wycena' : 'wycen'}</div>
+          </button>
+
+          <button
+            onClick={() => setExcelManagerOpen(true)}
+            className="bg-white border border-stone-300 hover:border-yellow-800 hover:bg-orange-100 shadow-md hover:shadow-xl transition-all p-4 text-left"
+          >
+            <div className="text-2xl mb-2">📊</div>
+            <div className="text-[10px] tracking-[0.3em] uppercase opacity-70 mb-1">Konfiguracja</div>
+            <div className="text-base font-medium text-stone-800">Cenniki</div>
+            <div className="text-[11px] text-stone-500 mt-1">
+              {CATEGORIES.filter(c => catalogs[c.id]?.collections.length > 0).length}/{CATEGORIES.length} wgranych
+            </div>
+          </button>
+
+          <button
+            onClick={() => setImageDebugOpen(true)}
+            className="bg-white border border-stone-300 hover:border-yellow-800 hover:bg-orange-100 shadow-md hover:shadow-xl transition-all p-4 text-left"
+          >
+            <div className="text-2xl mb-2">🖼️</div>
+            <div className="text-[10px] tracking-[0.3em] uppercase opacity-70 mb-1">Konfiguracja</div>
+            <div className="text-base font-medium text-stone-800">Zdjęcia</div>
+            <div className="text-[11px] text-stone-500 mt-1">{Object.keys(images).length} wgranych</div>
+          </button>
+
+          <button
+            onClick={() => setFabricsManagerOpen(true)}
+            className="bg-white border border-stone-300 hover:border-yellow-800 hover:bg-orange-100 shadow-md hover:shadow-xl transition-all p-4 text-left"
+          >
+            <div className="text-2xl mb-2">🧵</div>
+            <div className="text-[10px] tracking-[0.3em] uppercase opacity-70 mb-1">Konfiguracja</div>
+            <div className="text-base font-medium text-stone-800">Tkaniny</div>
+            <div className="text-[11px] text-stone-500 mt-1">
+              {Object.keys(fabrics).length > 0
+                ? `${Object.keys(fabrics).length} dostawców`
+                : 'Brak katalogu'}
+            </div>
+          </button>
+
+          {currentUser?.isAdmin && (
+            <button
+              onClick={() => setUsersPanelOpen(true)}
+              className="bg-white border border-stone-300 hover:border-yellow-800 hover:bg-orange-100 shadow-md hover:shadow-xl transition-all p-4 text-left"
+            >
+              <div className="text-2xl mb-2">👥</div>
+              <div className="text-[10px] tracking-[0.3em] uppercase opacity-70 mb-1">Administracja</div>
+              <div className="text-base font-medium text-stone-800">Użytkownicy</div>
+              <div className="text-[11px] text-stone-500 mt-1">{users.length} kont</div>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* STOPKA */}
+      <div className="max-w-5xl mx-auto text-center text-[10px] tracking-wider uppercase text-stone-400 mt-12">
+        Beatris · Konfigurator wycen
+      </div>
+    </div>
+  );
+
   return (
-    <div className="h-screen flex flex-col bg-orange-50" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}>
+    <>
+      {activeScreen === 'menu' && menuView}
+      <div
+        className="h-screen flex flex-col bg-orange-50"
+        style={{
+          fontFamily: "'Cormorant Garamond', Georgia, serif",
+          display: activeScreen === 'menu' ? 'none' : 'flex'
+        }}
+      >
 
       {/* NAGŁÓWEK - STAŁY */}
       <header className="bg-orange-100 text-stone-800 border-b-4 border-yellow-800 flex-shrink-0">
         <div className="px-6 py-3 flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <div className="text-[9px] tracking-[0.4em] text-yellow-700">SHOWROOM · WYCENY</div>
-            <h1 className="text-lg font-light tracking-tight">Konfigurator mebli modułowych</h1>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                if (positions.length > 0 && !currentQuoteId) {
+                  const ok = confirm('Masz niezapisaną wycenę. Czy na pewno chcesz wrócić do menu? Wycena zostanie utracona.');
+                  if (!ok) return;
+                }
+                setActiveScreen('menu');
+              }}
+              className="bg-yellow-800 hover:bg-yellow-900 text-white px-3 py-2 text-[10px] tracking-wider uppercase flex items-center gap-1 transition-colors"
+              title="Powrót do menu głównego"
+            >
+              ← Menu
+            </button>
+            <div>
+              <div className="text-[9px] tracking-[0.4em] text-yellow-700">
+                SHOWROOM · WYCENA · {CATEGORIES.find(c => c.id === activeCategory)?.label}
+              </div>
+              <h1 className="text-lg font-light tracking-tight">Konfigurator mebli modułowych</h1>
+            </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <div className="text-[10px] text-stone-500 hidden md:block">
@@ -1346,19 +1708,13 @@ function ShowroomQuoteApp() {
                 </span>
               )}
             </div>
-            <button
-              onClick={() => setImageDebugOpen(true)}
-              className="bg-orange-50 hover:bg-yellow-800 text-stone-800 border border-stone-300 hover:border-yellow-800 px-2 py-1.5 text-[10px] tracking-wider uppercase flex items-center gap-1 transition-colors"
-              title="Zarządzaj zdjęciami elementów"
-            >
-              <FolderOpen size={12} />
-              Zdjęcia
-              {Object.keys(images).length > 0 && (
-                <span className="bg-yellow-800 text-white px-1.5 py-0.5 text-[9px] rounded">
-                  {Object.keys(images).length}
-                </span>
-              )}
-            </button>
+            <input
+              ref={excelInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={handleExcelUpload}
+              className="hidden"
+            />
             <input
               ref={imagesInputRef}
               type="file"
@@ -1441,20 +1797,6 @@ function ShowroomQuoteApp() {
             >
               💾 {currentQuoteId ? 'Aktualizuj' : 'Zapisz'}
             </button>
-            <button
-              onClick={async () => {
-                const catLabel = CATEGORIES.find(c => c.id === activeCategory)?.label;
-                if (!confirm(`Czy na pewno chcesz wymienić cennik kategorii "${catLabel}"? Stare dane Excela tej kategorii zostaną usunięte. Zdjęcia pozostaną (są wspólne dla wszystkich kategorii).`)) return;
-                setCatalogs(prev => ({
-                  ...prev,
-                  [activeCategory]: { collections: [], priceGroups: [], fileName: '' }
-                }));
-                setPositions([]);
-              }}
-              className="text-[10px] text-stone-500 hover:text-yellow-700 tracking-wider uppercase"
-            >
-              Wymień cennik
-            </button>
 
             {/* INFO O ZALOGOWANYM UŻYTKOWNIKU */}
             <div className="flex items-center gap-2 border-l-2 border-yellow-800 pl-3 ml-2">
@@ -1486,30 +1828,6 @@ function ShowroomQuoteApp() {
               </button>
             </div>
           </div>
-        </div>
-
-        {/* ZAKŁADKI KATEGORII CENNIKA */}
-        <div className="flex bg-stone-200 border-t border-stone-300">
-          {CATEGORIES.map(cat => {
-            const hasData = catalogs[cat.id].collections.length > 0;
-            return (
-              <button
-                key={cat.id}
-                onClick={() => handleCategoryChange(cat.id)}
-                className={`flex-1 px-4 py-2.5 text-xs tracking-wider uppercase transition-all border-b-4 ${
-                  activeCategory === cat.id
-                    ? 'bg-orange-100 text-stone-800 border-yellow-800 font-bold'
-                    : 'bg-stone-200 text-stone-500 border-transparent hover:bg-orange-50'
-                }`}
-              >
-                {cat.label}
-                <span className="ml-1 opacity-70">({cat.currency})</span>
-                {hasData && activeCategory !== cat.id && (
-                  <span className="ml-2 text-yellow-700">✓</span>
-                )}
-              </button>
-            );
-          })}
         </div>
 
         {/* PASEK WYBORU KOLEKCJI - STAŁY POD NAGŁÓWKIEM */}
@@ -1592,7 +1910,8 @@ function ShowroomQuoteApp() {
               const availableGroups = priceGroups.filter(g => (el?.prices[g] || 0) > 0);
 
               return (
-                <div key={pos.id} className="bg-white border border-stone-200 shadow-sm hover:shadow-md transition-shadow flex items-center gap-4 px-4 py-3">
+                <div key={pos.id} className="bg-white border border-stone-200 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-4 px-4 py-3">
                   {/* Numer */}
                   <div className="w-12 h-12 bg-yellow-800 text-white flex items-center justify-center font-bold text-xl flex-shrink-0">
                     {idx + 1}
@@ -1667,6 +1986,112 @@ function ShowroomQuoteApp() {
                   >
                     <Trash2 size={18} />
                   </button>
+                  </div>
+
+                  {/* DRUGI RZĄD - WYBÓR TKANINY */}
+                  {(() => {
+                    const f = pos.fabric || { supplier: '', collection: '', color: '', manualMode: false };
+                    const suppliers = Object.keys(fabrics).sort();
+                    const hasFabricsLoaded = suppliers.length > 0;
+                    const collectionsForSupplier = f.supplier && fabrics[f.supplier] ? fabrics[f.supplier] : [];
+
+                    return (
+                      <div className="bg-orange-50 border-t border-stone-200 px-4 py-2 flex items-center gap-2 flex-wrap">
+                        <div className="text-[10px] tracking-wider uppercase text-stone-500 font-bold flex-shrink-0">🧵 Tkanina:</div>
+
+                        {(!hasFabricsLoaded || f.manualMode) ? (
+                          // TRYB RĘCZNY: dwa pola tekstowe (dostawca + kolekcja) + kolor
+                          <>
+                            <input
+                              type="text"
+                              value={f.supplier}
+                              onChange={e => updatePositionFabric(pos.id, 'supplier', e.target.value)}
+                              placeholder="Dostawca"
+                              className="bg-white border border-stone-300 px-2 py-1 text-xs focus:outline-none focus:border-yellow-800 w-32"
+                            />
+                            <input
+                              type="text"
+                              value={f.collection}
+                              onChange={e => updatePositionFabric(pos.id, 'collection', e.target.value)}
+                              placeholder="Kolekcja"
+                              className="bg-white border border-stone-300 px-2 py-1 text-xs focus:outline-none focus:border-yellow-800 w-32"
+                            />
+                            <input
+                              type="text"
+                              value={f.color}
+                              onChange={e => updatePositionFabric(pos.id, 'color', e.target.value)}
+                              placeholder="Kolor"
+                              className="flex-1 min-w-[100px] bg-white border border-stone-300 px-2 py-1 text-xs focus:outline-none focus:border-yellow-800"
+                            />
+                            {hasFabricsLoaded && (
+                              <button
+                                onClick={() => updatePositionFabric(pos.id, 'manualMode', false)}
+                                className="text-[10px] text-stone-500 hover:text-yellow-700 underline"
+                                title="Wróć do wyboru z listy"
+                              >
+                                z listy
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          // TRYB Z LISTY: dropdown dostawca → dropdown kolekcja → input kolor
+                          <>
+                            <div className="relative">
+                              <select
+                                value={f.supplier}
+                                onChange={e => {
+                                  if (e.target.value === '__manual__') {
+                                    updatePositionFabric(pos.id, 'manualMode', true);
+                                  } else {
+                                    updatePositionFabric(pos.id, 'supplier', e.target.value);
+                                  }
+                                }}
+                                className="bg-white border border-stone-300 px-2 py-1 text-xs appearance-none focus:outline-none focus:border-yellow-800 cursor-pointer pr-6 min-w-[110px]"
+                                title="Dostawca tkaniny"
+                              >
+                                <option value="">— dostawca —</option>
+                                {suppliers.map(s => <option key={s} value={s}>{s}</option>)}
+                                <option value="__manual__">✏️ Wpisz ręcznie</option>
+                              </select>
+                              <ChevronDown size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-stone-500 pointer-events-none" />
+                            </div>
+
+                            <div className="relative">
+                              <select
+                                value={f.collection}
+                                onChange={e => updatePositionFabric(pos.id, 'collection', e.target.value)}
+                                disabled={!f.supplier}
+                                className="bg-white border border-stone-300 px-2 py-1 text-xs appearance-none focus:outline-none focus:border-yellow-800 cursor-pointer pr-6 min-w-[110px] disabled:bg-stone-100 disabled:text-stone-400"
+                                title="Kolekcja tkanin"
+                              >
+                                <option value="">— kolekcja —</option>
+                                {collectionsForSupplier.map(c => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                              <ChevronDown size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-stone-500 pointer-events-none" />
+                            </div>
+
+                            <input
+                              type="text"
+                              value={f.color}
+                              onChange={e => updatePositionFabric(pos.id, 'color', e.target.value)}
+                              placeholder="Kolor (wpisz)"
+                              className="flex-1 min-w-[100px] bg-white border border-stone-300 px-2 py-1 text-xs focus:outline-none focus:border-yellow-800"
+                            />
+
+                            {(f.supplier || f.collection || f.color) && (
+                              <button
+                                onClick={() => setPositions(positions.map(p => p.id === pos.id ? { ...p, fabric: { supplier: '', collection: '', color: '', manualMode: false } } : p))}
+                                className="text-stone-400 hover:text-red-600 text-xs px-1"
+                                title="Wyczyść tkaninę"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
@@ -1927,6 +2352,10 @@ function ShowroomQuoteApp() {
         </div>
       )}
 
+      {/* KONIEC UKRYWANIA: zamknięcie wrappera ekranu wyceny.
+          Wszystkie modale ponizej są na zewnątrz - widoczne także w menu głównym. */}
+      </div>
+
       {/* PANEL UŻYTKOWNIKÓW (TYLKO DLA ADMINA) */}
       {usersPanelOpen && currentUser?.isAdmin && (
         <div
@@ -1954,7 +2383,64 @@ function ShowroomQuoteApp() {
                   Zarejestrowani użytkownicy ({users.length})
                 </div>
                 <div className="space-y-2">
-                  {users.map(u => (
+                  {users.map(u => {
+                    const isEditing = editingUser === u.username;
+                    if (isEditing) {
+                      return (
+                        <div key={u.username} className="bg-yellow-50 border-2 border-yellow-800 p-3 space-y-2">
+                          <div className="text-[10px] tracking-wider uppercase text-yellow-800 font-bold">
+                            ✏️ Edycja: {u.username}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[9px] tracking-wider uppercase text-stone-500 mb-1">Login</label>
+                              <input
+                                type="text"
+                                value={editUsername}
+                                onChange={e => setEditUsername(e.target.value)}
+                                disabled={u.username === 'BEATRIS'}
+                                className="w-full bg-white border border-stone-300 px-2 py-1.5 text-sm focus:outline-none focus:border-yellow-800 disabled:bg-stone-100 disabled:text-stone-400"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[9px] tracking-wider uppercase text-stone-500 mb-1">Hasło</label>
+                              <input
+                                type="text"
+                                value={editPassword}
+                                onChange={e => setEditPassword(e.target.value)}
+                                className="w-full bg-white border border-stone-300 px-2 py-1.5 text-sm focus:outline-none focus:border-yellow-800"
+                              />
+                            </div>
+                          </div>
+                          <label className="flex items-center gap-2 cursor-pointer text-sm text-stone-700">
+                            <input
+                              type="checkbox"
+                              checked={editIsAdmin}
+                              onChange={e => setEditIsAdmin(e.target.checked)}
+                              disabled={u.username === 'BEATRIS'}
+                              className="w-4 h-4"
+                            />
+                            Administrator (może zarządzać użytkownikami)
+                            {u.username === 'BEATRIS' && <span className="text-[10px] text-stone-500 italic">(wymagane dla BEATRIS)</span>}
+                          </label>
+                          <div className="flex gap-1 justify-end pt-1">
+                            <button
+                              onClick={cancelEditUser}
+                              className="bg-stone-200 hover:bg-stone-300 text-stone-700 px-3 py-1.5 text-[10px] tracking-wider uppercase"
+                            >
+                              Anuluj
+                            </button>
+                            <button
+                              onClick={saveEditUser}
+                              className="bg-yellow-800 hover:bg-yellow-900 text-white px-3 py-1.5 text-[10px] tracking-wider uppercase"
+                            >
+                              💾 Zapisz
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
                     <div key={u.username} className="bg-orange-50 border border-stone-200 p-3 flex items-center gap-3">
                       <div className="bg-yellow-800 text-white px-2 py-1 text-[10px] tracking-wider uppercase flex items-center gap-1">
                         <User size={11} />
@@ -1966,6 +2452,13 @@ function ShowroomQuoteApp() {
                         {u.username === currentUser.username && ' (Ty)'}
                       </div>
                       <button
+                        onClick={() => startEditUser(u)}
+                        className="bg-stone-100 hover:bg-yellow-800 hover:text-white text-stone-600 px-2 py-1.5 text-[10px] tracking-wider uppercase transition-colors"
+                        title="Edytuj użytkownika"
+                      >
+                        ✏️ Edytuj
+                      </button>
+                      <button
                         onClick={() => deleteUser(u.username)}
                         disabled={u.username === 'BEATRIS' || u.username === currentUser.username}
                         className="bg-stone-100 hover:bg-red-600 hover:text-white text-stone-500 p-2 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
@@ -1974,7 +2467,8 @@ function ShowroomQuoteApp() {
                         <Trash2 size={14} />
                       </button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -2026,6 +2520,197 @@ function ShowroomQuoteApp() {
                 <strong>Wskazówka:</strong> Każda zapisana wycena ma przypisanego użytkownika, który ją przyjął.
                 Widać to w historii wycen oraz w generowanym PDF i mailu.
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PANEL ZARZĄDZANIA TKANINAMI */}
+      {fabricsManagerOpen && (
+        <div
+          className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+          onClick={() => setFabricsManagerOpen(false)}
+        >
+          <div
+            className="bg-white max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="bg-orange-100 text-stone-800 px-6 py-5 flex items-center justify-between border-b-4 border-yellow-800">
+              <div>
+                <div className="text-[10px] tracking-[0.4em] text-yellow-700">🧵 TKANINY</div>
+                <div className="text-xl font-light">Katalog dostawców i kolekcji</div>
+              </div>
+              <button onClick={() => setFabricsManagerOpen(false)} className="text-stone-600 hover:text-yellow-800">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              <div className="bg-orange-50 border-l-4 border-yellow-800 p-3 text-sm text-stone-700">
+                <strong>Format pliku Excel:</strong>
+                <div className="mt-2 text-xs">
+                  • Kolumna 1: <strong>Dostawca</strong> (np. AGMAMITO, KVADRAT)<br/>
+                  • Kolumna 2: <strong>Kolekcja</strong> (np. ALICE, BRAVE ME)<br/>
+                  <span className="text-stone-500 italic mt-1 block">Kolor wpisujesz ręcznie w każdej wycenie. Możesz mieć wiele wierszy z tym samym dostawcą — wszystkie zostaną zgrupowane.</span>
+                </div>
+              </div>
+
+              {/* AKTUALNY STAN */}
+              <div className="bg-stone-50 border border-stone-300 p-4">
+                <div className="text-base font-medium text-stone-800 mb-2">
+                  Aktualny katalog
+                </div>
+                {Object.keys(fabrics).length === 0 ? (
+                  <div className="text-stone-500 italic text-sm mb-3">Brak wgranego katalogu tkanin.</div>
+                ) : (
+                  <div className="text-[11px] text-green-700 mb-3">
+                    ✓ Wgrane: {Object.keys(fabrics).length} dostawców, {Object.values(fabrics).reduce((sum, c) => sum + c.length, 0)} kolekcji
+                    {fabricsFileName && <span className="text-stone-500"> · {fabricsFileName}</span>}
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => fabricsInputRef.current?.click()}
+                    className="flex-1 bg-yellow-800 hover:bg-yellow-900 text-white px-4 py-2 text-xs tracking-wider uppercase flex items-center justify-center gap-2"
+                  >
+                    <FileSpreadsheet size={14} />
+                    {Object.keys(fabrics).length > 0 ? 'Wymień katalog' : 'Wgraj katalog'}
+                  </button>
+                  {Object.keys(fabrics).length > 0 && (
+                    <button
+                      onClick={() => {
+                        if (!confirm('Usunąć cały katalog tkanin? Tej akcji nie można cofnąć.')) return;
+                        setFabrics({});
+                        setFabricsFileName('');
+                      }}
+                      className="bg-stone-100 hover:bg-red-600 hover:text-white text-stone-500 px-3 py-2 text-xs tracking-wider uppercase transition-colors"
+                      title="Usuń katalog"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+                <input
+                  ref={fabricsInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleFabricsUpload}
+                  className="hidden"
+                />
+              </div>
+
+              {/* PODGLĄD KATALOGU */}
+              {Object.keys(fabrics).length > 0 && (
+                <div>
+                  <div className="text-[10px] tracking-wider uppercase text-stone-500 mb-2">
+                    Podgląd ({Object.keys(fabrics).length} dostawców)
+                  </div>
+                  <div className="bg-stone-50 border border-stone-200 p-3 max-h-64 overflow-y-auto space-y-3">
+                    {Object.entries(fabrics).sort((a, b) => a[0].localeCompare(b[0])).map(([supplier, collections]) => (
+                      <div key={supplier}>
+                        <div className="text-xs font-bold text-yellow-800 tracking-wider uppercase mb-1">
+                          {supplier} <span className="text-stone-500 font-normal">({collections.length})</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {collections.map(c => (
+                            <span key={c} className="bg-white border border-stone-300 px-2 py-0.5 text-[11px] text-stone-700">
+                              {c}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PANEL ZARZĄDZANIA CENNIKAMI */}
+      {excelManagerOpen && (
+        <div
+          className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+          onClick={() => setExcelManagerOpen(false)}
+        >
+          <div
+            className="bg-white max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="bg-orange-100 text-stone-800 px-6 py-5 flex items-center justify-between border-b-4 border-yellow-800">
+              <div>
+                <div className="text-[10px] tracking-[0.4em] text-yellow-700">📊 CENNIKI</div>
+                <div className="text-xl font-light">Wgrywanie i wymiana</div>
+              </div>
+              <button onClick={() => setExcelManagerOpen(false)} className="text-stone-600 hover:text-yellow-800">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              <div className="bg-orange-50 border-l-4 border-yellow-800 p-3 text-sm text-stone-700">
+                <strong>Format pliku Excel:</strong>
+                <div className="mt-2 text-xs">
+                  • Kolumna 1: <strong>Kolekcja</strong> (np. "Eros")<br/>
+                  • Kolumna 2: <strong>Element / Moduł</strong> (np. "narożnik lewy")<br/>
+                  • Kolumna 3+: <strong>Grupy cenowe</strong> (jak są w Twoim cenniku)<br/>
+                </div>
+              </div>
+
+              {CATEGORIES.map(cat => {
+                const data = catalogs[cat.id];
+                const hasData = data?.collections.length > 0;
+                return (
+                  <div key={cat.id} className="bg-stone-50 border border-stone-300 p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <div className="text-base font-medium text-stone-800">
+                          {cat.id === 'indywidualni' ? '🛋️' : cat.id === 'b2b_pln' ? '🏢' : '🌍'} {cat.label}
+                          <span className="text-[10px] text-stone-500 ml-2">({cat.currency})</span>
+                        </div>
+                        {hasData ? (
+                          <div className="text-[11px] text-green-700 mt-1">
+                            ✓ Wgrane: {data.collections.length} kolekcji, {data.priceGroups.length} grup cenowych
+                            {data.fileName && <span className="text-stone-500"> · {data.fileName}</span>}
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-stone-500 mt-1 italic">Brak wgranego cennika</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setActiveCategory(cat.id);
+                          // używamy istniejącego inputu excelInputRef
+                          setTimeout(() => excelInputRef.current?.click(), 50);
+                        }}
+                        className="flex-1 bg-yellow-800 hover:bg-yellow-900 text-white px-4 py-2 text-xs tracking-wider uppercase flex items-center justify-center gap-2"
+                      >
+                        <FileSpreadsheet size={14} />
+                        {hasData ? 'Wymień cennik' : 'Wgraj cennik'}
+                      </button>
+                      {hasData && (
+                        <button
+                          onClick={() => {
+                            if (!confirm(`Usunąć cennik kategorii "${cat.label}"? Tej akcji nie można cofnąć.`)) return;
+                            setCatalogs(prev => ({
+                              ...prev,
+                              [cat.id]: { collections: [], priceGroups: [], fileName: '' }
+                            }));
+                          }}
+                          className="bg-stone-100 hover:bg-red-600 hover:text-white text-stone-500 px-3 py-2 text-xs tracking-wider uppercase transition-colors"
+                          title="Usuń cennik"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -2625,7 +3310,7 @@ function ShowroomQuoteApp() {
           <img src={previewImage} alt="Podgląd" className="max-w-full max-h-full object-contain" />
         </div>
       )}
-    </div>
+    </>
   );
 }
 
