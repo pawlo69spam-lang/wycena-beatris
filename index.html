@@ -597,6 +597,8 @@ function ShowroomQuoteApp() {
       setOrderPhotos(quote.orderPhotos || []);
     }
     setHistoryPanelOpen(false);
+    // Przełącz na widok wyceny (jeśli byliśmy w menu)
+    setActiveScreen('quote');
   };
 
   const deleteQuoteFromHistory = (id) => {
@@ -1253,48 +1255,41 @@ function ShowroomQuoteApp() {
     }
     const html = generatePdfHtml();
 
-    // Usuń stary iframe jeśli istnieje
-    const oldIframe = document.getElementById('pdf-print-iframe');
-    if (oldIframe) oldIframe.remove();
+    // Otwórz nowe okno - przeglądarka wtedy używa <title> tego okna jako nazwy pliku PDF
+    const printWindow = window.open('', '_blank', 'width=800,height=900');
+    if (!printWindow) {
+      alert('Twoja przeglądarka zablokowała otwieranie nowego okna. Zezwól na pop-upy dla tej strony i spróbuj ponownie.');
+      return;
+    }
 
-    // Utwórz ukryty iframe do druku
-    const iframe = document.createElement('iframe');
-    iframe.id = 'pdf-print-iframe';
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = '0';
-    document.body.appendChild(iframe);
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
 
-    const doc = iframe.contentDocument || iframe.contentWindow.document;
-    doc.open();
-    doc.write(html);
-    doc.close();
-
-    // Poczekaj aż wszystkie obrazki się załadują, potem drukuj
-    iframe.onload = async () => {
-      await waitForImagesToLoad(doc);
-      // Dodatkowy bufor na renderowanie
+    // Poczekaj aż okno się załaduje + obrazki, potem drukuj
+    const doPrint = async () => {
+      await waitForImagesToLoad(printWindow.document);
       setTimeout(() => {
         try {
-          // Zmień tytuł głównego dokumentu - przeglądarki używają go jako sugerowanej nazwy pliku PDF
-          const safeQuoteNumber = String(quoteNumber || 'wycena').replace(/[\/\\:*?"<>|]/g, '-');
-          const safeClientName = clientName ? '-' + clientName.replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, '_').slice(0, 30) : '';
-          const originalTitle = document.title;
-          document.title = `${safeQuoteNumber}${safeClientName}`;
-
-          iframe.contentWindow.focus();
-          iframe.contentWindow.print();
-
-          // Przywróć oryginalny tytuł po krótkiej chwili (po otwarciu okna wydruku)
-          setTimeout(() => { document.title = originalTitle; }, 1000);
+          printWindow.focus();
+          printWindow.print();
+          // Automatycznie zamknij okno po wydruku (gdy użytkownik kliknie zapisz lub anuluj)
+          setTimeout(() => {
+            try { printWindow.close(); } catch (e) {}
+          }, 500);
         } catch (e) {
           alert('Nie udało się otworzyć okna wydruku. Spróbuj ponownie.');
         }
       }, 300);
     };
+
+    if (printWindow.document.readyState === 'complete') {
+      doPrint();
+    } else {
+      printWindow.onload = doPrint;
+      // Backup - po 1 sek nawet jeśli onload się nie odpalił
+      setTimeout(doPrint, 1000);
+    }
   };
 
   // Podgląd HTML w nakładce
@@ -1366,53 +1361,44 @@ function ShowroomQuoteApp() {
     );
     if (!ok) return;
 
-    // KROK 2: Generuj PDF (otwórz okno wydruku)
+    // KROK 2: Generuj PDF (otwórz okno wydruku w nowej karcie - dla lepszej nazwy pliku)
     const html = generatePdfHtml();
-    const oldIframe = document.getElementById('pdf-print-iframe');
-    if (oldIframe) oldIframe.remove();
+    const printWindow = window.open('', '_blank', 'width=800,height=900');
+    if (!printWindow) {
+      alert('Twoja przeglądarka zablokowała otwieranie nowego okna. Zezwól na pop-upy i spróbuj ponownie.');
+      // Otwórz tylko mail bez PDF
+      window.location.href = mailto;
+      return;
+    }
 
-    const iframe = document.createElement('iframe');
-    iframe.id = 'pdf-print-iframe';
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = '0';
-    document.body.appendChild(iframe);
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
 
-    const doc = iframe.contentDocument || iframe.contentWindow.document;
-    doc.open();
-    doc.write(html);
-    doc.close();
-
-    iframe.onload = async () => {
-      await waitForImagesToLoad(doc);
+    const doPrint = async () => {
+      await waitForImagesToLoad(printWindow.document);
       setTimeout(() => {
         try {
-          // Zmień tytuł głównego dokumentu - przeglądarki używają go jako sugerowanej nazwy pliku PDF
-          const safeQuoteNumber = String(quoteNumber || 'wycena').replace(/[\/\\:*?"<>|]/g, '-');
-          const safeClientName = clientName ? '-' + clientName.replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, '_').slice(0, 30) : '';
-          const originalTitle = document.title;
-          document.title = `${safeQuoteNumber}${safeClientName}`;
-
-          iframe.contentWindow.focus();
-          iframe.contentWindow.print();
-
-          // Przywróć tytuł
-          setTimeout(() => { document.title = originalTitle; }, 1000);
-
-          // KROK 3: Po wydruku - otwórz klient pocztowy
-          // Czekamy ~2 sekundy żeby okno wydruku zdążyło się pojawić
+          printWindow.focus();
+          printWindow.print();
+          // Po wydruku - otwórz klient pocztowy
           setTimeout(() => {
+            try { printWindow.close(); } catch (e) {}
             window.location.href = mailto;
-          }, 2000);
+          }, 1500);
         } catch (e) {
           // Jeśli druk nie poszedł, i tak otwórz mail
           window.location.href = mailto;
         }
       }, 300);
     };
+
+    if (printWindow.document.readyState === 'complete') {
+      doPrint();
+    } else {
+      printWindow.onload = doPrint;
+      setTimeout(doPrint, 1000);
+    }
   };
 
   // ---- PODSUMOWANIE ----
