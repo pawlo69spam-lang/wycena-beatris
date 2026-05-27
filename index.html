@@ -1254,47 +1254,25 @@ function ShowroomQuoteApp() {
       return;
     }
     const html = generatePdfHtml();
+    // Bezpieczna nazwa pliku PDF
+    const safeQuoteNumber = String(quoteNumber || 'wycena').replace(/[\/\\:*?"<>|]/g, '-');
+    const safeClientName = clientName ? '-' + clientName.replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, '_').slice(0, 30) : '';
+    const filename = `${safeQuoteNumber}${safeClientName}`;
 
-    // Otwórz nowe okno - przeglądarka wtedy używa <title> tego okna jako nazwy pliku PDF
-    const printWindow = window.open('', '_blank', 'width=800,height=900');
-    if (!printWindow) {
-      alert('Twoja przeglądarka zablokowała otwieranie nowego okna. Zezwól na pop-upy dla tej strony i spróbuj ponownie.');
-      return;
-    }
-
-    printWindow.document.open();
-    printWindow.document.write(html);
-    printWindow.document.close();
-
-    // Poczekaj aż okno się załaduje + obrazki, potem drukuj
-    const doPrint = async () => {
-      await waitForImagesToLoad(printWindow.document);
-      setTimeout(() => {
-        try {
-          printWindow.focus();
-          printWindow.print();
-          // Automatycznie zamknij okno po wydruku (gdy użytkownik kliknie zapisz lub anuluj)
-          setTimeout(() => {
-            try { printWindow.close(); } catch (e) {}
-          }, 500);
-        } catch (e) {
-          alert('Nie udało się otworzyć okna wydruku. Spróbuj ponownie.');
-        }
-      }, 300);
-    };
-
-    if (printWindow.document.readyState === 'complete') {
-      doPrint();
-    } else {
-      printWindow.onload = doPrint;
-      // Backup - po 1 sek nawet jeśli onload się nie odpalił
-      setTimeout(doPrint, 1000);
-    }
+    setPdfPreviewHtml(html);
+    setPdfPreviewFilename(filename);
+    setPdfAfterPrintAction(null);
+    setPdfPreviewOpen(true);
   };
 
   // Podgląd HTML w nakładce
   const [htmlPreviewOpen, setHtmlPreviewOpen] = useState(false);
   const [htmlPreviewContent, setHtmlPreviewContent] = useState('');
+  // Okno podglądu PDF z możliwością druku/zamknięcia
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
+  const [pdfPreviewHtml, setPdfPreviewHtml] = useState('');
+  const [pdfPreviewFilename, setPdfPreviewFilename] = useState('');
+  const [pdfAfterPrintAction, setPdfAfterPrintAction] = useState(null); // np. otwórz mailto po wydruku
 
   const handlePreviewHtml = () => {
     if (positions.length === 0) {
@@ -1361,44 +1339,19 @@ function ShowroomQuoteApp() {
     );
     if (!ok) return;
 
-    // KROK 2: Generuj PDF (otwórz okno wydruku w nowej karcie - dla lepszej nazwy pliku)
+    // KROK 2: Otwórz okno podglądu PDF - po wydruku automatycznie otworzy mail
     const html = generatePdfHtml();
-    const printWindow = window.open('', '_blank', 'width=800,height=900');
-    if (!printWindow) {
-      alert('Twoja przeglądarka zablokowała otwieranie nowego okna. Zezwól na pop-upy i spróbuj ponownie.');
-      // Otwórz tylko mail bez PDF
+    const safeQuoteNumber = String(quoteNumber || 'wycena').replace(/[\/\\:*?"<>|]/g, '-');
+    const safeClientName = clientName ? '-' + clientName.replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, '_').slice(0, 30) : '';
+    const filename = `${safeQuoteNumber}${safeClientName}`;
+
+    setPdfPreviewHtml(html);
+    setPdfPreviewFilename(filename);
+    // Po wydruku/zamknięciu - otwórz klient pocztowy
+    setPdfAfterPrintAction(() => () => {
       window.location.href = mailto;
-      return;
-    }
-
-    printWindow.document.open();
-    printWindow.document.write(html);
-    printWindow.document.close();
-
-    const doPrint = async () => {
-      await waitForImagesToLoad(printWindow.document);
-      setTimeout(() => {
-        try {
-          printWindow.focus();
-          printWindow.print();
-          // Po wydruku - otwórz klient pocztowy
-          setTimeout(() => {
-            try { printWindow.close(); } catch (e) {}
-            window.location.href = mailto;
-          }, 1500);
-        } catch (e) {
-          // Jeśli druk nie poszedł, i tak otwórz mail
-          window.location.href = mailto;
-        }
-      }, 300);
-    };
-
-    if (printWindow.document.readyState === 'complete') {
-      doPrint();
-    } else {
-      printWindow.onload = doPrint;
-      setTimeout(doPrint, 1000);
-    }
+    });
+    setPdfPreviewOpen(true);
   };
 
   // ---- PODSUMOWANIE ----
@@ -2341,6 +2294,78 @@ function ShowroomQuoteApp() {
       {/* KONIEC UKRYWANIA: zamknięcie wrappera ekranu wyceny.
           Wszystkie modale ponizej są na zewnątrz - widoczne także w menu głównym. */}
       </div>
+
+      {/* OKNO PODGLĄDU PDF Z DRUKIEM I ZAMKNIĘCIEM */}
+      {pdfPreviewOpen && (
+        <div className="fixed inset-0 bg-black/90 z-[60] flex flex-col">
+          {/* Pasek z przyciskami */}
+          <div className="bg-stone-800 text-white px-6 py-3 flex items-center justify-between flex-shrink-0 shadow-lg">
+            <div className="flex items-center gap-3">
+              <FileSpreadsheet size={20} className="text-yellow-400" />
+              <div>
+                <div className="text-[10px] tracking-[0.3em] uppercase text-yellow-400">Podgląd wyceny</div>
+                <div className="text-sm font-medium">{pdfPreviewFilename}.pdf</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  // Wywołaj druk z iframe podglądu
+                  const iframe = document.getElementById('pdf-preview-iframe');
+                  if (iframe) {
+                    try {
+                      iframe.contentWindow.focus();
+                      iframe.contentWindow.print();
+                    } catch (e) {
+                      alert('Nie udało się otworzyć okna druku: ' + e.message);
+                    }
+                  }
+                }}
+                className="bg-yellow-700 hover:bg-yellow-800 text-white px-4 py-2 text-xs tracking-wider uppercase flex items-center gap-2 transition-colors"
+                title="Drukuj lub zapisz jako PDF"
+              >
+                <Download size={14} />
+                Drukuj / Zapisz PDF
+              </button>
+              <button
+                onClick={() => {
+                  setPdfPreviewOpen(false);
+                  setPdfPreviewHtml('');
+                  setPdfPreviewFilename('');
+                  // Jeśli była zaplanowana akcja po zamknięciu (np. mailto) — wykonaj
+                  if (pdfAfterPrintAction) {
+                    try { pdfAfterPrintAction(); } catch (e) {}
+                    setPdfAfterPrintAction(null);
+                  }
+                }}
+                className="bg-stone-700 hover:bg-red-600 text-white px-4 py-2 text-xs tracking-wider uppercase flex items-center gap-2 transition-colors"
+                title="Zamknij podgląd"
+              >
+                <X size={14} />
+                Zamknij
+              </button>
+            </div>
+          </div>
+
+          {/* Iframe z podglądem PDF */}
+          <div className="flex-1 bg-stone-200 overflow-hidden">
+            <iframe
+              id="pdf-preview-iframe"
+              title={pdfPreviewFilename}
+              srcDoc={pdfPreviewHtml}
+              className="w-full h-full border-0"
+              style={{ background: 'white' }}
+            />
+          </div>
+
+          {/* Instrukcja na dole */}
+          <div className="bg-stone-900 text-white px-6 py-2 text-[11px] text-stone-300 flex-shrink-0 flex items-center justify-between gap-4">
+            <div>
+              💡 <strong>Wskazówka:</strong> Kliknij "Drukuj / Zapisz PDF" → w oknie wydruku wybierz <strong>"Zapisz jako PDF"</strong> jako drukarkę. Nazwa pliku będzie: <strong>{pdfPreviewFilename}</strong>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* PANEL UŻYTKOWNIKÓW (TYLKO DLA ADMINA) */}
       {usersPanelOpen && currentUser?.isAdmin && (
